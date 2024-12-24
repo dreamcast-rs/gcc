@@ -43,11 +43,40 @@
 #include "context.h"
 #include "tree-pass.h"
 #include "insn-attr.h"
+#include "tm-constrs.h"
 
 
 #define CONST_INT_OR_FIXED_P(X) (CONST_INT_P (X) || CONST_FIXED_P (X))
 
 #define FIRST_GPR (AVR_TINY ? REG_18 : REG_2)
+
+
+// Emit pattern PAT, and ICE when the insn is not valid / not recognized.
+
+static rtx_insn *
+emit_valid_insn (rtx pat)
+{
+  rtx_insn *insn = emit_insn (pat);
+
+  if (! valid_insn_p (insn))  // Also runs recog().
+    fatal_insn ("emit unrecognizable insn", insn);
+
+  return insn;
+}
+
+// Emit a single_set with an optional scratch operand.  This function
+// asserts that the new insn is valid and recognized.
+
+static rtx_insn *
+emit_valid_move_clobbercc (rtx dest, rtx src, rtx scratch = NULL_RTX)
+{
+  rtx pat = scratch
+    ? gen_gen_move_clobbercc_scratch (dest, src, scratch)
+    : gen_gen_move_clobbercc (dest, src);
+
+  return emit_valid_insn (pat);
+}
+
 
 namespace
 {
@@ -116,31 +145,6 @@ single_set_with_scratch (rtx_insn *insn, int &regno_scratch)
   return single_set (insn);
 }
 
-// Emit pattern PAT, and ICE when the insn is not valid / not recognized.
-
-static rtx_insn *
-emit_valid_insn (rtx pat)
-{
-  rtx_insn *insn = emit_insn (pat);
-
-  if (! valid_insn_p (insn))  // Also runs recog().
-    fatal_insn ("emit unrecognizable insn", insn);
-
-  return insn;
-}
-
-// Emit a single_set with an optional scratch operand.  This function
-// asserts that the new insn is valid and recognized.
-
-static rtx_insn *
-emit_valid_move_clobbercc (rtx dest, rtx src, rtx scratch = NULL_RTX)
-{
-  rtx pat = scratch
-    ? gen_gen_move_clobbercc_scratch (dest, src, scratch)
-    : gen_gen_move_clobbercc (dest, src);
-
-  return emit_valid_insn (pat);
-}
 
 // One bit for each GRP in REG_0 ... REG_31.
 using gprmask_t = uint32_t;
@@ -430,6 +434,11 @@ static machine_mode size_to_mode (int size)
       Split all insns where the operation can be performed on individual
       bytes, like andsi3.  In example (4) the andhi3 can be optimized
       to an andqi3.
+
+   bbinfo_t::try_mem0_p
+      Try to fuse a mem = reg insn to mem = __zero_reg__.
+      This should only occur when -msplit-ldst is on, but may
+      also occur with pushes since push<mode>1 splits them.
 */
 
 
@@ -510,6 +519,7 @@ bool bbinfo_t::try_split_any_p;
 bool bbinfo_t::try_simplify_p;
 bool bbinfo_t::use_arith_p;
 bool bbinfo_t::use_set_some_p;
+bool bbinfo_t::try_mem0_p;
 
 
 // Abstract Interpretation of expressions.
@@ -960,8 +970,9 @@ struct absint_t
 	    const int sub_regno = eq[i].regno (false /*nonstrict*/);
 	    const bool nop = regno &&  sub_regno == regno + i;
 	    eq[i].dump (nop ? "%s=nop" : "%s", f);
-	    fprintf (f, "%s", i ? "; " : xs + strlen ("%s"));
+	    fprintf (f, "%s", i ? "; " : "");
 	  }
+	fprintf (f, "%s", xs + strlen ("%s"));
       }
   }
 }; // absint_t
@@ -974,12 +985,12 @@ struct insninfo_t
   // This is an insn that sets the m_size bytes of m_regno to either
   // - A compile time constant m_isrc (m_code = CONST_INT), or
   // - The contents of register number m_rsrc (m_code = REG).
-  int m_size;
+  int m_size = 0;
   int m_regno;
   int m_rsrc;
   rtx_code m_code;
   uint64_t m_isrc;
-  rtx_insn *m_insn;
+  rtx_insn *m_insn = nullptr;
   rtx m_set = NULL_RTX;
   rtx m_src = NULL_RTX;
   int m_scratch = 0; // 0 or the register number of a QImode scratch.
@@ -1082,6 +1093,7 @@ struct optimize_data_t
   {}
 
   bool try_fuse (bbinfo_t *);
+  bool try_mem0 (bbinfo_t *);
   bool try_bin_arg1 (bbinfo_t *);
   bool try_simplify (bbinfo_t *);
   bool try_split_ldi (bbinfo_t *);
@@ -1223,7 +1235,7 @@ public:
 
   unsigned int execute (function *func) final override
   {
-    if (optimize > 0 && avr_fuse_move > 0)
+    if (optimize > 0 && avropt_fuse_move > 0)
       {
 	df_note_add_problem ();
 	df_analyze ();
@@ -1386,10 +1398,10 @@ plies_t::emit_insns (const insninfo_t &ii, const memento_t &memo) const
 }
 
 
-// Helper for .emit_insns().  Emit an ior<mode>3 or and<mode>3 insns
+// Helper for .emit_insns().  Emit an ior<mode>3 or and<mode>3 insn
 // that's equivalent to a sequence of contiguous BLDs starting at
-// .plies[ISTART].  Updates N_INSNS according to the number of insns emitted
-// and returns the number of consumed plys in .plies[].
+// .plies[ISTART].  Updates N_INSNS according to the number of insns
+// emitted and returns the number of consumed plys in .plies[].
 int
 plies_t::emit_blds (const insninfo_t &ii, int &n_insns, int istart) const
 {
@@ -1443,7 +1455,7 @@ plies_t::emit_blds (const insninfo_t &ii, int &n_insns, int istart) const
 
 // Emit insns for a contiguous sequence of SET ply_t's starting at
 // .plies[ISTART].  Advances N_INSNS by the number of emitted insns.
-// MEMO ist the state of the GPRs before II es executed, where II
+// MEMO ist the state of the GPRs before II is executed, where II
 // represents the insn under optimization.
 // The emitted insns are "movqi_insn" or "*reload_inqi"
 // when .plies[ISTART].in_set_some is not set, and one "set_some" insn
@@ -1566,7 +1578,7 @@ plies_t::emit_sets (const insninfo_t &ii, int &n_insns, const memento_t &memo,
 
 // Try to find an operation such that  Y = op (X).
 // Shifts and rotates are regarded as unary operaions with
-// an implied 2nd operand.
+// an implied 2nd operand or 1 or 4, respectively.
 static rtx_code
 find_arith (uint8_t y, uint8_t x)
 {
@@ -1601,8 +1613,8 @@ find_arith2 (uint8_t z, uint8_t x, uint8_t y)
 }
 
 
-// Add plies to .plies[] that represent a MOVW, but only ones that reduce the
-// Hamming distance from REGNO[SIZE] to VAL by exactly DHAMM.
+// Add plies to .plies[] that represent a MOVW, but only ones that reduce
+// the Hamming distance from REGNO[SIZE] to VAL by exactly DHAMM.
 void
 plies_t::add_plies_movw (int regno, int size, uint64_t val,
 			 int dhamm, const memento_t &memo)
@@ -1866,7 +1878,7 @@ insninfo_t::emit_insn () const
   switch (m_code)
     {
     default:
-      gcc_unreachable();
+      gcc_unreachable ();
 
     case CONST_INT:
       xsrc = gen_int_mode (m_isrc, mode);
@@ -2408,6 +2420,7 @@ bbinfo_t::find_plies (int len, const insninfo_t &ii, const memento_t &memo0)
 
       bool profitable = (cost < SCALE * fpd->max_ply_cost
 			 || (bbinfo_t::try_split_any_p
+			     && fpd->solution.n_plies == 0
 			     && cost / SCALE <= fpd->max_ply_cost
 			     && cost / SCALE == fpd->movmode_cost));
       if (! profitable)
@@ -2460,7 +2473,8 @@ bbinfo_t::run_find_plies (const insninfo_t &ii, const memento_t &memo) const
 
   if (hamm == 0)
     {
-      avr_dump (";; Found redundant insn %d\n", INSN_UID (ii.m_insn));
+      avr_dump (";; Found redundant insn %d\n",
+		ii.m_insn ? INSN_UID (ii.m_insn) : 0);
       return true;
     }
 
@@ -2499,6 +2513,44 @@ bbinfo_t::run_find_plies (const insninfo_t &ii, const memento_t &memo) const
   ply_t::max_n_ply_ts = std::max (ply_t::max_n_ply_ts, ply_t::n_ply_ts);
 
   return fpd->solution.n_plies != 0;
+}
+
+
+// Try to propagate __zero_reg__ to a mem = reg insn's source.
+// Returns true on success and sets .n_new_insns.
+bool
+optimize_data_t::try_mem0 (bbinfo_t *)
+{
+  rtx_insn *insn = curr.ii.m_insn;
+  rtx set, mem, reg;
+  machine_mode mode;
+
+  if (insn
+      && (set = single_set (insn))
+      && MEM_P (mem = SET_DEST (set))
+      && REG_P (reg = SET_SRC (set))
+      && GET_MODE_SIZE (mode = GET_MODE (mem)) <= 4
+      && END_REGNO (reg) <= REG_32
+      && ! (regmask (reg) & memento_t::fixed_regs_mask)
+      && curr.regs.have_value (REGNO (reg), GET_MODE_SIZE (mode), 0x0))
+    {
+      avr_dump (";; Found insn %d: mem:%m = 0 = r%d\n", INSN_UID (insn),
+		mode, REGNO (reg));
+
+      // Some insns like PUSHes don't clobber REG_CC.
+      bool clobbers_cc = GET_CODE (PATTERN (insn)) == PARALLEL;
+
+      if (clobbers_cc)
+	emit_valid_move_clobbercc (mem, CONST0_RTX (mode));
+      else
+	emit_valid_insn (gen_rtx_SET (mem, CONST0_RTX (mode)));
+
+      n_new_insns = 1;
+
+      return true;
+    }
+
+  return false;
 }
 
 
@@ -2906,6 +2958,14 @@ optimize_data_t::try_split_any (bbinfo_t *)
 	      xsrc = gen_rtx_REG (HImode, r16);
 	      i += step;
 	    }
+	  // ...or a reg-reg move from a multi-byte move...
+	  else if (r_src
+		   // Prefer a reg-reg move over a (potential) load
+		   // of a constant, because the subsequent RTL
+		   // peephole pass may combine it to a MOVW again.
+		   && AVR_HAVE_MOVW
+		   && REG_P (curr.ii.m_src))
+	    xsrc = gen_rtx_REG (QImode, r_src);
 	  // ...or a cheap constant...
 	  else if (val8 >= 0
 		   && AVRasm::constant_cost (SET, r_dest, val8) <= 1)
@@ -3093,7 +3153,8 @@ bbinfo_t::optimize_one_block (bool &changed)
 		    || (bbinfo_t::try_bin_arg1_p && od.try_bin_arg1 (this))
 		    || (bbinfo_t::try_simplify_p && od.try_simplify (this))
 		    || (bbinfo_t::try_split_ldi_p && od.try_split_ldi (this))
-		    || (bbinfo_t::try_split_any_p && od.try_split_any (this)));
+		    || (bbinfo_t::try_split_any_p && od.try_split_any (this))
+		    || (bbinfo_t::try_mem0_p && od.try_mem0 (this)));
 
       rtx_insn *new_insns = get_insns ();
       end_sequence ();
@@ -3177,13 +3238,14 @@ bbinfo_t::optimize_one_function (function *func)
   // use arith                                     1 1 1 1  1 1 1 1      3
 
   // Which optimization(s) to perform.
-  bbinfo_t::try_fuse_p = avr_fuse_move & 0x1;      // Digit 0 in [0, 1].
-  bbinfo_t::try_bin_arg1_p = avr_fuse_move & 0x2;  // Digit 1 in [0, 1].
-  bbinfo_t::try_split_any_p = avr_fuse_move & 0x4; // Digit 2 in [0, 1].
-  bbinfo_t::try_split_ldi_p = avr_fuse_move >> 3;       // Digit 3 in [0, 2].
-  bbinfo_t::use_arith_p = (avr_fuse_move >> 3) >= 2;    // Digit 3 in [0, 2].
+  bbinfo_t::try_fuse_p = avropt_fuse_move & 0x1;      // Digit 0 in [0, 1].
+  bbinfo_t::try_mem0_p = avropt_fuse_move & 0x1;      // Digit 0 in [0, 1].
+  bbinfo_t::try_bin_arg1_p = avropt_fuse_move & 0x2;  // Digit 1 in [0, 1].
+  bbinfo_t::try_split_any_p = avropt_fuse_move & 0x4; // Digit 2 in [0, 1].
+  bbinfo_t::try_split_ldi_p = avropt_fuse_move >> 3;    // Digit 3 in [0, 2].
+  bbinfo_t::use_arith_p = (avropt_fuse_move >> 3) >= 2; // Digit 3 in [0, 2].
   bbinfo_t::use_set_some_p = bbinfo_t::try_split_ldi_p; // Digit 3 in [0, 2].
-  bbinfo_t::try_simplify_p = avr_fuse_move != 0;
+  bbinfo_t::try_simplify_p = avropt_fuse_move != 0;
 
   // Topologically sort BBs from last to first.
 
@@ -3424,7 +3486,7 @@ avr_2comparisons_rhs (rtx_code &cmp1, rtx xval1,
   switch (way)
     {
     default:
-      gcc_unreachable();
+      gcc_unreachable ();
 
       // cmp1 gets the LT, avoid difficult branches for cmp2.
       WAY (123, LT, EQ);
@@ -3761,7 +3823,7 @@ avr_pass_ifelse::execute (function *)
 {
   rtx_insn *next_insn;
 
-  for (rtx_insn *insn = get_insns(); insn; insn = next_insn)
+  for (rtx_insn *insn = get_insns (); insn; insn = next_insn)
     {
       next_insn = next_nonnote_nondebug_insn (insn);
 
@@ -3868,10 +3930,10 @@ avr_parallel_insn_from_insns (rtx_insn *i[5])
 {
   rtvec vec = gen_rtvec (5, PATTERN (i[0]), PATTERN (i[1]), PATTERN (i[2]),
 			 PATTERN (i[3]), PATTERN (i[4]));
-  start_sequence();
+  start_sequence ();
   emit (gen_rtx_PARALLEL (VOIDmode, vec));
-  rtx_insn *insn = get_insns();
-  end_sequence();
+  rtx_insn *insn = get_insns ();
+  end_sequence ();
 
   return insn;
 }
@@ -4034,7 +4096,7 @@ avr_optimize_casesi (rtx_insn *insns[5], rtx *xop)
   // original mode instead of in SImode.  Use a newly created pseudo.
   // This will replace insns[1..2].
 
-  start_sequence();
+  start_sequence ();
 
   rtx reg = copy_to_mode_reg (mode, xop[11]);
 
@@ -4051,9 +4113,9 @@ avr_optimize_casesi (rtx_insn *insns[5], rtx *xop)
   JUMP_LABEL (cbranch) = xop[4];
   ++LABEL_NUSES (xop[4]);
 
-  rtx_insn *seq1 = get_insns();
-  rtx_insn *last1 = get_last_insn();
-  end_sequence();
+  rtx_insn *seq1 = get_insns ();
+  rtx_insn *last1 = get_last_insn ();
+  end_sequence ();
 
   emit_insn_after (seq1, insns[2]);
 
@@ -4061,7 +4123,7 @@ avr_optimize_casesi (rtx_insn *insns[5], rtx *xop)
   // 16-bit index.  If QImode is used, extend it to HImode first.
   // This will replace insns[4].
 
-  start_sequence();
+  start_sequence ();
 
   if (QImode == mode)
     reg = force_reg (HImode, gen_rtx_fmt_e (code, HImode, reg));
@@ -4072,9 +4134,9 @@ avr_optimize_casesi (rtx_insn *insns[5], rtx *xop)
 
   emit_insn (pat_4);
 
-  rtx_insn *seq2 = get_insns();
-  rtx_insn *last2 = get_last_insn();
-  end_sequence();
+  rtx_insn *seq2 = get_insns ();
+  rtx_insn *last2 = get_last_insn ();
+  end_sequence ();
 
   emit_insn_after (seq2, insns[3]);
 
@@ -4212,12 +4274,17 @@ public:
     return make_avr_pass_fuse_add (m_ctxt);
   }
 
-  bool gate (function *) final override
+  unsigned int execute (function *func) final override
   {
-    return optimize && avr_fuse_add > 0;
+    func->machine->n_avr_fuse_add_executed += 1;
+    n_avr_fuse_add_executed = func->machine->n_avr_fuse_add_executed;
+
+    if (optimize && avropt_fuse_add > 0)
+      return execute1 (func);
+    return 0;
   }
 
-  unsigned int execute (function *) final override;
+  unsigned int execute1 (function *);
 
   struct Some_Insn
   {
@@ -4292,7 +4359,8 @@ struct AVR_LdSt_Props
   AVR_LdSt_Props (int regno, bool store_p, bool volatile_p, addr_space_t as)
   {
     bool generic_p = ADDR_SPACE_GENERIC_P (as);
-    bool flashx_p = ! generic_p && as != ADDR_SPACE_MEMX;
+    bool flashx_p = (! generic_p
+		     && as != ADDR_SPACE_MEMX && as != ADDR_SPACE_FLASHX);
     has_postinc = generic_p || (flashx_p && regno == REG_Z);
     has_predec = generic_p;
     has_ldd = ! AVR_TINY && generic_p && (regno == REG_Y || regno == REG_Z);
@@ -4340,7 +4408,7 @@ avr_maybe_adjust_cfa (rtx_insn *insn, rtx reg, int addend)
   if (addend
       && frame_pointer_needed
       && REGNO (reg) == FRAME_POINTER_REGNUM
-      && avr_fuse_add == 3)
+      && avropt_fuse_add == 3)
     {
       rtx plus = plus_constant (Pmode, reg, addend);
       RTX_FRAME_RELATED_P (insn) = 1;
@@ -4434,7 +4502,7 @@ avr_pass_fuse_add::avr_pass_fuse_add::Mem_Insn::Mem_Insn (rtx_insn *insn)
 
   addr_regno = REGNO (addr_reg);
 
-  if (avr_fuse_add == 2
+  if (avropt_fuse_add == 2
       && frame_pointer_needed
       && addr_regno == FRAME_POINTER_REGNUM)
     MEM_VOLATILE_P (mem) = 0;
@@ -4696,7 +4764,7 @@ avr_pass_fuse_add::fuse_mem_add (Mem_Insn &mem, Add_Insn &add)
    as  PRE_DEC + PRE_DEC  for two adjacent locations.  */
 
 unsigned int
-avr_pass_fuse_add::execute (function *func)
+avr_pass_fuse_add::execute1 (function *func)
 {
   df_note_add_problem ();
   df_analyze ();
@@ -4770,6 +4838,380 @@ avr_pass_fuse_add::execute (function *func)
 
 
 //////////////////////////////////////////////////////////////////////////////
+// Split shift insns after peephole2 / befor avr-fuse-move.
+
+static const pass_data avr_pass_data_split_after_peephole2 =
+{
+  RTL_PASS,	    // type
+  "",		    // name (will be patched)
+  OPTGROUP_NONE,    // optinfo_flags
+  TV_DF_SCAN,	    // tv_id
+  0,		    // properties_required
+  0,		    // properties_provided
+  0,		    // properties_destroyed
+  0,		    // todo_flags_start
+  0		    // todo_flags_finish
+};
+
+class avr_pass_split_after_peephole2 : public rtl_opt_pass
+{
+public:
+  avr_pass_split_after_peephole2 (gcc::context *ctxt, const char *name)
+    : rtl_opt_pass (avr_pass_data_split_after_peephole2, ctxt)
+  {
+    this->name = name;
+  }
+
+  unsigned int execute (function *) final override
+  {
+    if (avr_shift_is_3op ())
+      split_all_insns ();
+    return 0;
+  }
+
+}; // avr_pass_split_after_peephole2
+
+} // anonymous namespace
+
+
+/* Whether some shift insn alternatives are a `3op' 3-operand insn.
+   This 3op alternatives allow the source and the destination register
+   of the shift to be different right from the start, because the splitter
+   will split the 3op shift into a 3-operand byte shift and a 2-operand
+   residual bit shift.  (When the residual shift has an offset of one
+   less than the bitsize, then the residual shift is also a 3op insn.)  */
+
+bool
+avr_shift_is_3op ()
+{
+  // Don't split for OPTIMIZE_SIZE_MAX (-Oz).
+  // For OPTIMIZE_SIZE_BALANCED (-Os), we still split because
+  // the size overhead (if at all) is marginal.
+
+  return (avropt_split_bit_shift
+	  && optimize > 0
+	  && avr_optimize_size_level () < OPTIMIZE_SIZE_MAX);
+}
+
+
+/* Implement constraints `C2a', `C2l', `C2r' ... `C4a', `C4l', `C4r'.
+   Whether we split an N_BYTES shift of code CODE in { ASHIFTRT,
+   LSHIFTRT, ASHIFT } into a byte shift and a residual bit shift.  */
+
+bool
+avr_split_shift_p (int n_bytes, int offset, rtx_code code)
+{
+  gcc_assert (n_bytes == 4 || n_bytes == 3 || n_bytes == 2);
+
+  if (! avr_shift_is_3op ()
+      || offset % 8 == 0)
+    return false;
+
+  if (n_bytes == 4)
+    return select<bool>()
+      : code == ASHIFT ? IN_RANGE (offset, 9, 31) && offset != 15
+      : code == ASHIFTRT ? IN_RANGE (offset, 9, 29) && offset != 15
+      : code == LSHIFTRT ? IN_RANGE (offset, 9, 31) && offset != 15
+      : bad_case<bool> ();
+
+  if (n_bytes == 3)
+    return select<bool>()
+      : code == ASHIFT ? IN_RANGE (offset, 9, 23) && offset != 15
+      : code == ASHIFTRT ? IN_RANGE (offset, 9, 21) && offset != 15
+      : code == LSHIFTRT ? IN_RANGE (offset, 9, 23) && offset != 15
+      : bad_case<bool> ();
+
+  if (n_bytes == 2)
+    return select<bool>()
+      : code == ASHIFT ? IN_RANGE (offset, 9, 15)
+      : code == ASHIFTRT ? IN_RANGE (offset, 9, 13)
+      : code == LSHIFTRT ? IN_RANGE (offset, 9, 15)
+      : bad_case<bool> ();
+
+  return false;
+}
+
+
+/* Emit a DEST = SRC <code> OFF shift of QImode, HImode or PSImode.
+   SCRATCH is a QImode d-register, scratch:QI, or NULL_RTX.
+   This function is used to emit shifts that have been split into
+   a byte shift and a residual bit shift that operates on a mode
+   strictly smaller than the original shift.  */
+
+static void
+avr_emit_shift (rtx_code code, rtx dest, rtx src, int off, rtx scratch)
+{
+  const machine_mode mode = GET_MODE (dest);
+  const int n_bits = GET_MODE_BITSIZE (mode);
+  rtx xoff = GEN_INT (off);
+
+  // Work out which alternatives can handle 3 operands independent
+  // of options.
+
+  const bool b8_is_3op = off == 6;
+
+  const bool b16_is_3op = select<bool>()
+    : code == ASHIFT ? satisfies_constraint_C7c (xoff) // 7...12
+    : code == LSHIFTRT ? satisfies_constraint_C7c (xoff)
+    : code == ASHIFTRT ? off == 7
+    : bad_case<bool> ();
+
+  const bool b24_is_3op = select<bool>()
+    : code == ASHIFT ? off == 15
+    : code == LSHIFTRT ? off == 15
+    : code == ASHIFTRT ? false
+    : bad_case<bool> ();
+
+  const bool is_3op = (off % 8 == 0
+		       || off == n_bits - 1
+		       || (code == ASHIFTRT && off == n_bits - 2)
+		       || (n_bits == 8 && b8_is_3op)
+		       || (n_bits == 16 && b16_is_3op)
+		       || (n_bits == 24 && b24_is_3op));
+  rtx shift;
+
+  if (is_3op)
+    {
+      shift = gen_rtx_fmt_ee (code, mode, src, xoff);
+    }
+  else
+    {
+      if (REGNO (dest) != REGNO (src))
+	emit_valid_move_clobbercc (dest, src);
+      shift = gen_rtx_fmt_ee (code, mode, dest, xoff);
+    }
+
+  if (n_bits == 8)
+    // 8-bit shifts don't have a scratch operand.
+    scratch = NULL_RTX;
+  else if (! scratch && n_bits == 24)
+    // 24-bit shifts always have a scratch operand.
+    scratch = gen_rtx_SCRATCH (QImode);
+
+  emit_valid_move_clobbercc (dest, shift, scratch);
+}
+
+
+/* Handle the 4-byte case of avr_split_shift below:
+   Split 4-byte shift  DEST = SRC <code> IOFF  into a 3-operand
+   byte shift and a residual shift in a smaller mode if possible.
+   SCRATCH is a QImode upper scratch register or NULL_RTX.  */
+
+static bool
+avr_split_shift4 (rtx dest, rtx src, int ioff, rtx scratch, rtx_code code)
+{
+  gcc_assert (GET_MODE_SIZE (GET_MODE (dest)) == 4);
+
+  if (code == ASHIFT)
+    {
+      if (IN_RANGE (ioff, 25, 31))
+	{
+	  rtx dst8 = avr_byte (dest, 3);
+	  rtx src8 = avr_byte (src, 0);
+	  avr_emit_shift (code, dst8, src8, ioff - 24, NULL_RTX);
+	  emit_valid_move_clobbercc (avr_byte (dest, 2), const0_rtx);
+	  emit_valid_move_clobbercc (avr_word (dest, 0), const0_rtx);
+	  return true;
+	}
+      else if (IN_RANGE (ioff, 17, 23))
+	{
+	  rtx dst16 = avr_word (dest, 2);
+	  rtx src16 = avr_word (src, 0);
+	  avr_emit_shift (code, dst16, src16, ioff - 16, scratch);
+	  emit_valid_move_clobbercc (avr_word (dest, 0), const0_rtx);
+	  return true;
+	}
+      // ...the 9...14 cases are only handled by define_split because
+      // for now, we don't exploit that the low byte is zero.
+    }
+  else if (code == ASHIFTRT
+	   || code == LSHIFTRT)
+    {
+      if (IN_RANGE (ioff, 25, 30 + (code == LSHIFTRT)))
+	{
+	  rtx dst8 = avr_byte (dest, 0);
+	  rtx src8 = avr_byte (src, 3);
+	  avr_emit_shift (code, dst8, src8, ioff - 24, NULL_RTX);
+	  if (code == ASHIFTRT)
+	    {
+	      rtx signs = avr_byte (dest, 1);
+	      avr_emit_shift (code, signs, src8, 7, NULL_RTX);
+	      emit_valid_move_clobbercc (avr_byte (dest, 2), signs);
+	      emit_valid_move_clobbercc (avr_byte (dest, 3), signs);
+	    }
+	  else
+	    {
+	      emit_valid_move_clobbercc (avr_byte (dest, 1), const0_rtx);
+	      emit_valid_move_clobbercc (avr_word (dest, 2), const0_rtx);
+	    }
+	  return true;
+	}
+      else if (IN_RANGE (ioff, 17, 23))
+	{
+	  rtx dst16 = avr_word (dest, 0);
+	  rtx src16 = avr_word (src, 2);
+	  avr_emit_shift (code, dst16, src16, ioff - 16, scratch);
+	  if (code == ASHIFTRT)
+	    {
+	      rtx msb = avr_byte (src, 3);
+	      rtx signs = avr_byte (dest, 2);
+	      avr_emit_shift (code, signs, msb, 7, NULL_RTX);
+	      emit_valid_move_clobbercc (avr_byte (dest, 3), signs);
+	    }
+	  else
+	    emit_valid_move_clobbercc (avr_word (dest, 2), const0_rtx);
+
+	  return true;
+	}
+      else if (IN_RANGE (ioff, 9, 15))
+	{
+	  avr_emit_shift (code, dest, src, 8, scratch);
+	  rtx dst24 = avr_chunk (PSImode, dest, 0);
+	  rtx src24 = avr_chunk (PSImode, dest, 0);
+	  avr_emit_shift (code, dst24, src24, ioff - 8, scratch);
+	  return true;
+	}
+    }
+  else
+    gcc_unreachable ();
+
+  return false;
+}
+
+
+/* Handle the 3-byte case of avr_split_shift below:
+   Split 3-byte shift  DEST = SRC <code> IOFF  into a 3-operand
+   byte shift and a residual shift in a smaller mode if possible.
+   SCRATCH is a QImode upper scratch register or NULL_RTX.  */
+
+static bool
+avr_split_shift3 (rtx dest, rtx src, int ioff, rtx scratch, rtx_code code)
+{
+  gcc_assert (GET_MODE_SIZE (GET_MODE (dest)) == 3);
+
+  if (code == ASHIFT)
+    {
+      if (IN_RANGE (ioff, 17, 23))
+	{
+	  rtx dst8 = avr_byte (dest, 2);
+	  rtx src8 = avr_byte (src, 0);
+	  avr_emit_shift (code, dst8, src8, ioff - 16, NULL_RTX);
+	  emit_valid_move_clobbercc (avr_word (dest, 0), const0_rtx);
+	  return true;
+	}
+      // ...the 9...14 cases are only handled by define_split because
+      // for now, we don't exploit that the low byte is zero.
+    }
+  else if (code == ASHIFTRT
+	   || code == LSHIFTRT)
+    {
+      if (IN_RANGE (ioff, 17, 22 + (code == LSHIFTRT)))
+	{
+	  rtx dst8 = avr_byte (dest, 0);
+	  rtx src8 = avr_byte (src, 2);
+	  avr_emit_shift (code, dst8, src8, ioff - 16, NULL_RTX);
+	  if (code == ASHIFTRT)
+	    {
+	      rtx signs = avr_byte (dest, 1);
+	      avr_emit_shift (code, signs, src8, 7, NULL_RTX);
+	      emit_valid_move_clobbercc (avr_byte (dest, 2), signs);
+	    }
+	  else
+	    {
+	      emit_valid_move_clobbercc (avr_byte (dest, 1), const0_rtx);
+	      emit_valid_move_clobbercc (avr_byte (dest, 2), const0_rtx);
+	    }
+	  return true;
+	}
+      else if (IN_RANGE (ioff, 9, 15))
+	{
+	  avr_emit_shift (code, dest, src, 8, scratch);
+	  rtx dst16 = avr_chunk (HImode, dest, 0);
+	  rtx src16 = avr_chunk (HImode, dest, 0);
+	  avr_emit_shift (code, dst16, src16, ioff - 8, scratch);
+	  return true;
+	}
+    }
+  else
+    gcc_unreachable ();
+
+  return false;
+}
+
+
+/* Handle the 2-byte case of avr_split_shift below:
+   Split 2-byte shift  DEST = SRC <code> IOFF  into a 3-operand
+   byte shift and a residual shift in a smaller mode if possible.
+   SCRATCH is a QImode upper scratch register or NULL_RTX.  */
+
+static bool
+avr_split_shift2 (rtx dest, rtx src, int ioff, rtx /*scratch*/, rtx_code code)
+{
+  gcc_assert (GET_MODE_SIZE (GET_MODE (dest)) == 2);
+
+  if (code == ASHIFT)
+    {
+      if (IN_RANGE (ioff, 9, 15))
+	{
+	  rtx dst8 = avr_byte (dest, 1);
+	  rtx src8 = avr_byte (src, 0);
+	  avr_emit_shift (code, dst8, src8, ioff - 8, NULL_RTX);
+	  emit_valid_move_clobbercc (avr_byte (dest, 0), const0_rtx);
+	  return true;
+	}
+    }
+  else if (code == ASHIFTRT
+	   || code == LSHIFTRT)
+    {
+      if (IN_RANGE (ioff, 9, 14 + (code == LSHIFTRT)))
+	{
+	  rtx dst8 = avr_byte (dest, 0);
+	  rtx src8 = avr_byte (src, 1);
+	  rtx signs = const0_rtx;
+	  avr_emit_shift (code, dst8, src8, ioff - 8, NULL_RTX);
+	  if (code == ASHIFTRT)
+	    {
+	      signs = avr_byte (dest, 1);
+	      avr_emit_shift (code, signs, src8, 7, NULL_RTX);
+	    }
+	  emit_valid_move_clobbercc (avr_byte (dest, 1), signs);
+	  return true;
+	}
+    }
+  else
+    gcc_unreachable ();
+
+  return false;
+}
+
+
+/* Worker for a define_split that runs when -msplit-bit-shift is on.
+   Split a shift of code CODE into a 3op byte shift and a residual bit shift.
+   Return 'true' when a split has been performed and insns have been emitted.
+   Otherwise, return 'false'.  */
+
+bool
+avr_split_shift (rtx xop[], rtx scratch, rtx_code code)
+{
+  scratch = scratch && REG_P (scratch) ? scratch : NULL_RTX;
+  rtx dest = xop[0];
+  rtx src = xop[1];
+  int ioff = INTVAL (xop[2]);
+  int n_bytes = GET_MODE_SIZE (GET_MODE (dest));
+
+  return select<bool>()
+    : n_bytes == 2 ? avr_split_shift2 (dest, src, ioff, scratch, code)
+    : n_bytes == 3 ? avr_split_shift3 (dest, src, ioff, scratch, code)
+    : n_bytes == 4 ? avr_split_shift4 (dest, src, ioff, scratch, code)
+    : bad_case<bool> ();
+}
+
+
+namespace
+{
+
+
+//////////////////////////////////////////////////////////////////////////////
 // Determine whether an ISR may use the __gcc_isr pseudo-instruction.
 
 static const pass_data avr_pass_data_pre_proep =
@@ -4798,7 +5240,7 @@ public:
 
   unsigned int execute (function *fun) final override
   {
-    if (avr_gasisr_prologues
+    if (avropt_gasisr_prologues
 	// Whether this function is an ISR worth scanning at all.
 	&& !fun->machine->is_no_gccisr
 	&& (fun->machine->is_interrupt
@@ -4951,15 +5393,15 @@ avr_split_fake_addressing_move (rtx_insn * /*insn*/, rtx *xop)
   if (frame_pointer_needed
       && REGNO (base) == FRAME_POINTER_REGNUM)
     {
-      if (avr_fuse_add < 2
+      if (avropt_fuse_add < 2
 	  // Be a projection (we always split PLUS).
-	  || (avr_fuse_add == 2 && volatile_p && addr_code != PLUS))
+	  || (avropt_fuse_add == 2 && volatile_p && addr_code != PLUS))
 	return false;
 
       // Changing the frame pointer locally may confuse later passes
       // like .dse2 which don't track changes of FP, not even when
       // respective CFA notes are present.  An example is pr22141-1.c.
-      if (avr_fuse_add == 2)
+      if (avropt_fuse_add == 2)
 	mem_volatile_p = true;
     }
 
@@ -5072,6 +5514,112 @@ avr_split_fake_addressing_move (rtx_insn * /*insn*/, rtx *xop)
 }
 
 
+/* Given memory reference mem(ADDR), return true when it can be split into
+   single-byte moves, and all resulting addresses are natively supported.
+   ADDR is in addr-space generic.  */
+
+static bool
+splittable_address_p (rtx addr, int n_bytes)
+{
+  if (CONSTANT_ADDRESS_P (addr)
+      || GET_CODE (addr) == PRE_DEC
+      || GET_CODE (addr) == POST_INC)
+    return true;
+
+  if (! AVR_TINY)
+    {
+      rtx base = select<rtx>()
+	: REG_P (addr) ? addr
+	: GET_CODE (addr) == PLUS ? XEXP (addr, 0)
+	: NULL_RTX;
+
+      int off = select<int>()
+	: REG_P (addr) ? 0
+	: GET_CODE (addr) == PLUS ? (int) INTVAL (XEXP (addr, 1))
+	: -1;
+
+      return (base && REG_P (base)
+	      && (REGNO (base) == REG_Y || REGNO (base) == REG_Z)
+	      && IN_RANGE (off, 0, 64 - n_bytes));
+    }
+
+  return false;
+}
+
+
+/* Like avr_byte(), but also knows how to split POST_INC and PRE_DEC
+   memory references.  */
+
+static rtx
+avr_byte_maybe_mem (rtx x, int n)
+{
+  rtx addr, b;
+  if (MEM_P (x)
+      && (GET_CODE (addr = XEXP (x, 0)) == POST_INC
+	  || GET_CODE (addr) == PRE_DEC))
+    b = gen_rtx_MEM (QImode, copy_rtx (addr));
+  else
+    b = avr_byte (x, n);
+
+  if (MEM_P (x))
+    gcc_assert (MEM_P (b));
+
+  return b;
+}
+
+
+/* Split multi-byte load / stores into 1-byte such insns
+   provided non-volatile, addr-space = generic, no reg-overlap
+   and the resulting addressings are all natively supported.
+   Returns true when the  XOP[0] = XOP[1]  insn has been split and
+   false, otherwise.  */
+
+bool
+avr_split_ldst (rtx *xop)
+{
+  rtx dest = xop[0];
+  rtx src = xop[1];
+  machine_mode mode = GET_MODE (dest);
+  int n_bytes = GET_MODE_SIZE (mode);
+  rtx mem, reg_or_0;
+
+  if (MEM_P (dest) && reg_or_0_operand (src, mode))
+    {
+      mem = dest;
+      reg_or_0 = src;
+    }
+  else if (register_operand (dest, mode) && MEM_P (src))
+    {
+      reg_or_0 = dest;
+      mem = src;
+    }
+  else
+    return false;
+
+  rtx addr = XEXP (mem, 0);
+
+  if (MEM_VOLATILE_P (mem)
+      || ! ADDR_SPACE_GENERIC_P (MEM_ADDR_SPACE (mem))
+      || ! IN_RANGE (n_bytes, 2, 4)
+      || ! splittable_address_p (addr, n_bytes)
+      || reg_overlap_mentioned_p (reg_or_0, addr))
+    return false;
+
+  const int step = GET_CODE (addr) == PRE_DEC ? -1 : 1;
+  const int istart = step > 0 ? 0 : n_bytes - 1;
+  const int iend = istart + step * n_bytes;
+
+  for (int i = istart; i != iend; i += step)
+    {
+      rtx di = avr_byte_maybe_mem (dest, i);
+      rtx si = avr_byte_maybe_mem (src, i);
+      emit_move_ccc (di, si);
+    }
+
+  return true;
+}
+
+
 
 // Functions  make_<pass-name> (gcc::context*)  where <pass-name> is
 // according to the pass declaration in avr-passes.def.  GCC's pass
@@ -5123,4 +5671,12 @@ rtl_opt_pass *
 make_avr_pass_fuse_move (gcc::context *ctxt)
 {
   return new avr_pass_fuse_move (ctxt, "avr-fuse-move");
+}
+
+// Split insns after peephole2 / befor avr-fuse-move.
+
+rtl_opt_pass *
+make_avr_pass_split_after_peephole2 (gcc::context *ctxt)
+{
+  return new avr_pass_split_after_peephole2 (ctxt, "avr-split-after-peephole2");
 }

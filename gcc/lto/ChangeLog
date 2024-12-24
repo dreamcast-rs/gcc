@@ -1,3 +1,29 @@
+2024-12-12  Martin Uecker  <uecker@tugraz.at>
+
+	PR c/113688
+	PR c/114014
+	PR c/114713
+	PR c/117724
+	* lto-common.cc (hash_canonical_type): Add exception.
+
+2024-12-12  Martin Uecker  <uecker@tugraz.at>
+
+	* lto-common.cc (hash_canonical_type): Add exception.
+
+2024-11-22  Andrew Pinski  <quic_apinski@quicinc.com>
+
+	PR bootstrap/117737
+	* lto-common.cc (INCLUDE_MEMORY): Remove.
+	* lto-dump.cc (INCLUDE_MEMORY): Remove.
+	* lto-partition.cc (INCLUDE_MEMORY): Remove.
+	* lto-symtab.cc (INCLUDE_MEMORY): Remove.
+	* lto.cc (INCLUDE_MEMORY): Remove.
+
+2024-11-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/117024
+	* lto-lang.cc (flag_isoc2y): New variable.
+
 2024-10-25  Jakub Jelinek  <jakub@redhat.com>
 
 	PR lto/117201

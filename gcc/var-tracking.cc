@@ -85,7 +85,6 @@
 
 */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -3532,6 +3531,14 @@ loc_cmp (rtx x, rtx y)
 	if (XINT (x, i) == XINT (y, i))
 	  break;
 	else if (XINT (x, i) < XINT (y, i))
+	  return -1;
+	else
+	  return 1;
+
+      case 'L':
+	if (XLOC (x, i) == XLOC (y, i))
+	  break;
+	else if (XLOC (x, i) < XLOC (y, i))
 	  return -1;
 	else
 	  return 1;

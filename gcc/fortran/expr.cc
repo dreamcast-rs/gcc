@@ -18,7 +18,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -1614,7 +1613,7 @@ find_array_section (gfc_expr *expr, gfc_ref *ref)
 	  /* Zero-sized arrays have no shape and no elements, stop early.  */
 	  if (!begin->shape)
 	    {
-	      mpz_init_set_ui (nelts, 0);
+	      mpz_set_ui (nelts, 0);
 	      break;
 	    }
 
@@ -1715,7 +1714,7 @@ find_array_section (gfc_expr *expr, gfc_ref *ref)
      constructor.  */
   for (idx = 0; idx < (int) mpz_get_si (nelts); idx++)
     {
-      mpz_init_set_ui (ptr, 0);
+      mpz_set_ui (ptr, 0);
 
       incr_ctr = true;
       for (d = 0; d < rank; d++)
@@ -1834,6 +1833,7 @@ find_inquiry_ref (gfc_expr *p, gfc_expr **newp)
 {
   gfc_ref *ref;
   gfc_ref *inquiry = NULL;
+  gfc_ref *inquiry_head;
   gfc_expr *tmp;
 
   tmp = gfc_copy_expr (p);
@@ -1859,6 +1859,7 @@ find_inquiry_ref (gfc_expr *p, gfc_expr **newp)
       return false;
     }
 
+  inquiry_head = inquiry;
   gfc_resolve_expr (tmp);
 
   /* Leave these to the backend since the type and kind is not confirmed until
@@ -1931,7 +1932,7 @@ find_inquiry_ref (gfc_expr *p, gfc_expr **newp)
 		    mpc_imagref (tmp->value.complex), GFC_RND_MODE);
 	  break;
 	}
-      // TODO: Fix leaking expr tmp, when simplify is done twice.
+
       if (inquiry->next)
 	gfc_replace_expr (tmp, *newp);
     }
@@ -1945,10 +1946,12 @@ find_inquiry_ref (gfc_expr *p, gfc_expr **newp)
     }
 
   gfc_free_expr (tmp);
+  gfc_free_ref_list (inquiry_head);
   return true;
 
 cleanup:
   gfc_free_expr (tmp);
+  gfc_free_ref_list (inquiry_head);
   return false;
 }
 
@@ -4361,16 +4364,24 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue,
 
       /* If this can be determined, check that the target must be at least as
 	 large as the pointer assigned to it is.  */
-      if (gfc_array_size (lvalue, &lsize)
-	  && gfc_array_size (rvalue, &rsize)
-	  && mpz_cmp (rsize, lsize) < 0)
+      bool got_lsize = gfc_array_size (lvalue, &lsize);
+      bool got_rsize = got_lsize && gfc_array_size (rvalue, &rsize);
+      bool too_small = got_rsize && mpz_cmp (rsize, lsize) < 0;
+
+      if (too_small)
 	{
 	  gfc_error ("Rank remapping target is smaller than size of the"
 		     " pointer (%ld < %ld) at %L",
 		     mpz_get_si (rsize), mpz_get_si (lsize),
 		     &lvalue->where);
+	  mpz_clear (lsize);
+	  mpz_clear (rsize);
 	  return false;
 	}
+      if (got_lsize)
+	mpz_clear (lsize);
+      if (got_rsize)
+	mpz_clear (rsize);
 
       /* An assumed rank target is an experimental F202y feature.  */
       if (rvalue->rank == -1 && !(gfc_option.allow_std & GFC_STD_F202Y))

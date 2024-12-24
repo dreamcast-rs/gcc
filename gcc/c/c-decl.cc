@@ -26,7 +26,6 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "config.h"
 #define INCLUDE_STRING
-#define INCLUDE_MEMORY
 #include "system.h"
 #include "coretypes.h"
 #include "target.h"
@@ -62,6 +61,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "omp-general.h"
 #include "omp-offload.h"  /* For offload_vars.  */
 #include "c-parser.h"
+#include "gcc-urlifier.h"
 
 #include "tree-pretty-print.h"
 
@@ -4548,6 +4548,17 @@ lookup_name_fuzzy (tree name, enum lookup_name_fuzzy_kind kind, location_t loc)
 						  IDENTIFIER_POINTER (name),
 						  header_hint));
 
+  /* Next, look for exact matches for builtin defines that would have been
+     defined if the user had passed a command-line option (e.g. -fopenmp
+     for "_OPENMP").  */
+  diagnostic_option_id option_id
+    = get_option_for_builtin_define (IDENTIFIER_POINTER (name));
+  if (option_id.m_idx > 0)
+    return name_hint (nullptr,
+		      new suggest_missing_option (loc,
+						  IDENTIFIER_POINTER (name),
+						  option_id));
+
   /* Only suggest names reserved for the implementation if NAME begins
      with an underscore.  */
   bool consider_implementation_names = (IDENTIFIER_POINTER (name)[0] == '_');
@@ -5733,8 +5744,11 @@ start_decl (struct c_declarator *declarator, struct c_declspecs *declspecs,
       && DECL_DECLARED_INLINE_P (decl)
       && DECL_UNINLINABLE (decl)
       && lookup_attribute ("noinline", DECL_ATTRIBUTES (decl)))
-    warning (OPT_Wattributes, "inline function %q+D given attribute %qs",
-	     decl, "noinline");
+    {
+      auto_urlify_attributes sentinel;
+      warning (OPT_Wattributes, "inline function %q+D given attribute %qs",
+	       decl, "noinline");
+    }
 
   /* C99 6.7.4p3: An inline definition of a function with external
      linkage shall not contain a definition of a modifiable object
@@ -8480,8 +8494,8 @@ grokparms (struct c_arg_info *arg_info, bool funcdef_flag)
 	 or definition of the function.  In the case where the tag was
 	 first declared within the parameter list, a warning has
 	 already been given.  If a parameter has void type, then
-	 however the function cannot be defined or called, so
-	 warn.  */
+	 this has already received an error (constraint violation in C2Y,
+	 previously implicitly undefined behavior).  */
 
       for (parm = arg_info->parms, typelt = arg_types, parmno = 1;
 	   parm;
@@ -8507,17 +8521,6 @@ grokparms (struct c_arg_info *arg_info, bool funcdef_flag)
 		  TREE_VALUE (typelt) = error_mark_node;
 		  TREE_TYPE (parm) = error_mark_node;
 		  arg_types = NULL_TREE;
-		}
-	      else if (VOID_TYPE_P (type))
-		{
-		  if (DECL_NAME (parm))
-		    warning_at (input_location, 0,
-				"parameter %u (%q+D) has void type",
-				parmno, parm);
-		  else
-		    warning_at (DECL_SOURCE_LOCATION (parm), 0,
-				"parameter %u has void type",
-				parmno);
 		}
 	    }
 
@@ -8627,12 +8630,14 @@ get_parm_info (bool ellipsis, tree expr)
 	  if (TREE_ASM_WRITTEN (decl))
 	    error_at (b->locus,
 		      "parameter %q+D has just a forward declaration", decl);
-	  /* Check for (..., void, ...) and issue an error.  */
-	  else if (VOID_TYPE_P (type) && !DECL_NAME (decl))
+	  /* Check for (..., void, ...) and named void parameters and issue an
+	     error.  */
+	  else if (VOID_TYPE_P (type))
 	    {
 	      if (!gave_void_only_once_err)
 		{
-		  error_at (b->locus, "%<void%> must be the only parameter");
+		  error_at (b->locus,
+			    "%<void%> must be the only parameter and unnamed");
 		  gave_void_only_once_err = true;
 		}
 	    }
@@ -10653,9 +10658,12 @@ start_function (struct c_declspecs *declspecs, struct c_declarator *declarator,
   if (DECL_DECLARED_INLINE_P (decl1)
       && DECL_UNINLINABLE (decl1)
       && lookup_attribute ("noinline", DECL_ATTRIBUTES (decl1)))
-    warning_at (loc, OPT_Wattributes,
-		"inline function %qD given attribute %qs",
-		decl1, "noinline");
+    {
+      auto_urlify_attributes sentinel;
+      warning_at (loc, OPT_Wattributes,
+		  "inline function %qD given attribute %qs",
+		  decl1, "noinline");
+    }
 
   /* Handle gnu_inline attribute.  */
   if (declspecs->inline_p

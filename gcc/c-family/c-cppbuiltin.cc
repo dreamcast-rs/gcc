@@ -357,17 +357,8 @@ builtin_define_decimal_float_constants (const char *name_prefix,
 
   /* Compute the maximum representable value.  */
   sprintf (name, "__%s_MAX__", name_prefix);
-  p = buf;
-  for (digits = fmt->p; digits; digits--)
-    {
-      *p++ = '9';
-      if (digits == fmt->p)
-	*p++ = '.';
-    }
-  *p = 0;
-  /* fmt->p plus 1, to account for the decimal point and fmt->emax
-     minus 1 because the digits are nines, not 1.0.  */
-  sprintf (&buf[fmt->p + 1], "E%d%s", fmt->emax - 1, suffix);
+  get_max_float (fmt, buf, sizeof (buf) - strlen (suffix), false);
+  strcat (buf, suffix);
   builtin_define_with_value (name, buf, 0);
 
   /* Compute epsilon (the difference between 1 and least value greater
@@ -1101,6 +1092,7 @@ c_cpp_builtins (cpp_reader *pfile)
 	  cpp_define (pfile, "__cpp_structured_bindings=202403L");
 	  cpp_define (pfile, "__cpp_deleted_function=202403L");
 	  cpp_define (pfile, "__cpp_variadic_friend=202403L");
+	  cpp_define (pfile, "__cpp_pack_indexing=202311L");
 	}
       if (flag_concepts && cxx_dialect > cxx14)
 	cpp_define (pfile, "__cpp_concepts=202002L");
@@ -1680,6 +1672,19 @@ c_cpp_builtins (cpp_reader *pfile)
      format.  */
   if (ENABLE_DECIMAL_FLOAT && ENABLE_DECIMAL_BID_FORMAT)
     cpp_define (pfile, "__DECIMAL_BID_FORMAT__");
+}
+
+/* Given NAME, return the command-line option that would make it be
+   a builtin define, or 0 if unrecognized.  */
+
+diagnostic_option_id
+get_option_for_builtin_define (const char *name)
+{
+  if (!strcmp (name, "_OPENACC"))
+    return OPT_fopenacc;
+  if (!strcmp (name, "_OPENMP"))
+    return OPT_fopenmp;
+  return 0;
 }
 
 /* Pass an object-like macro.  If it doesn't lie in the user's

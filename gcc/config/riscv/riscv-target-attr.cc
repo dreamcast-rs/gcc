@@ -19,7 +19,6 @@ along with GCC; see the file COPYING3.  If not see
 
 #define IN_TARGET_CODE 1
 
-#define INCLUDE_MEMORY
 #define INCLUDE_STRING
 #include "config.h"
 #include "system.h"
@@ -141,7 +140,7 @@ riscv_target_attr_parser::parse_arch (const char *str)
 	      error_at (
 		m_loc,
 		"unexpected arch for %<target()%> attribute: bad "
-		"string found %<%s%>", token);
+		"string found %qs", token);
 	      goto fail;
 	    }
 

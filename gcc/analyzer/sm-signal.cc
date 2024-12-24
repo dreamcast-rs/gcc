@@ -21,7 +21,6 @@ along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
 #include "config.h"
-#define INCLUDE_MEMORY
 #define INCLUDE_VECTOR
 #include "system.h"
 #include "coretypes.h"
@@ -219,12 +218,6 @@ public:
   void print (pretty_printer *pp) const final override
   {
     pp_string (pp, "signal delivered");
-  }
-
-  json::object *to_json () const
-  {
-    json::object *custom_obj = new json::object ();
-    return custom_obj;
   }
 
   bool update_model (region_model *model,

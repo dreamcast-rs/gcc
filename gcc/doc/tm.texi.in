@@ -3472,6 +3472,8 @@ stack.
 
 @hook TARGET_MODE_CAN_TRANSFER_BITS
 
+@hook TARGET_REDZONE_CLOBBER
+
 @hook TARGET_TRANSLATE_MODE_ATTRIBUTE
 
 @hook TARGET_SCALAR_MODE_SUPPORTED_P
@@ -4759,6 +4761,8 @@ Define this macro if a non-short-circuit operation produced by
 @hook TARGET_NO_SPECULATION_IN_DELAY_SLOTS_P
 
 @hook TARGET_ESTIMATED_POLY_VALUE
+
+@hook TARGET_AVOID_STORE_FORWARDING_P
 
 @node Scheduling
 @section Adjusting the Instruction Scheduler
@@ -8060,6 +8064,8 @@ and the associated definitions of those functions.
 
 @hook TARGET_ASAN_SHADOW_OFFSET
 
+@hook TARGET_ASAN_DYNAMIC_SHADOW_OFFSET_P
+
 @hook TARGET_MEMMODEL_CHECK
 
 @hook TARGET_ATOMIC_TEST_AND_SET_TRUEVAL
@@ -8147,3 +8153,5 @@ maintainer is familiar with.
 @hook TARGET_HAVE_SHADOW_CALL_STACK
 
 @hook TARGET_HAVE_LIBATOMIC
+
+@hook TARGET_DOCUMENTATION_NAME

@@ -53,7 +53,6 @@ along with GCC; see the file COPYING3.  If not see
        That is a vector recording what function parameters
        may escape to a function call (and with what parameter index).  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -3747,7 +3746,7 @@ modref_write ()
     {
       streamer_write_uhwi (ob, 0);
       streamer_write_char_stream (ob->main_stream, 0);
-      produce_asm (ob, NULL);
+      produce_asm (ob);
       destroy_output_block (ob);
       return;
     }
@@ -3822,7 +3821,7 @@ modref_write ()
 	}
     }
   streamer_write_char_stream (ob->main_stream, 0);
-  produce_asm (ob, NULL);
+  produce_asm (ob);
   destroy_output_block (ob);
 }
 

@@ -53,6 +53,7 @@ enum
     ADDR_SPACE_FLASH3,
     ADDR_SPACE_FLASH4,
     ADDR_SPACE_FLASH5,
+    ADDR_SPACE_FLASHX,
     ADDR_SPACE_MEMX,
     /* Sentinel */
     ADDR_SPACE_COUNT
@@ -94,9 +95,9 @@ FIXME: DRIVER_SELF_SPECS has changed.
    there is always __AVR_SP8__ == __AVR_HAVE_8BIT_SP__.  */
 
 #define AVR_HAVE_8BIT_SP                        \
-  (TARGET_TINY_STACK || avr_sp8)
+  (TARGET_TINY_STACK || avropt_sp8)
 
-#define AVR_HAVE_SPH (!avr_sp8)
+#define AVR_HAVE_SPH (!avropt_sp8)
 
 #define AVR_2_BYTE_PC (!AVR_HAVE_EIJMP_EICALL)
 #define AVR_3_BYTE_PC (AVR_HAVE_EIJMP_EICALL)
@@ -374,7 +375,7 @@ typedef struct avr_args
    edges instead.  The default branch costs are 0, mainly because otherwise
    do_store_flag might come up with bloated code.  */
 #define BRANCH_COST(speed_p, predictable_p)     \
-  (avr_branch_cost + (reload_completed ? 4 : 0))
+  (avropt_branch_cost + (reload_completed ? 4 : 0))
 
 #define SLOW_BYTE_ACCESS 0
 
@@ -610,6 +611,13 @@ struct GTY(()) machine_function
   /* 'true' if this function references .L__stack_usage like with
      __builtin_return_address.  */
   bool use_L__stack_usage;
+
+  /* Counts how many times the execute() method of the avr-fuse-add pass
+     has been invoked.  The count is even increased when the optimization
+     itself is not run.  The purpose of this variable is to provide
+     information about where in the pass sequence we are.
+     It is used in insn / split conditions.  */
+  int n_avr_fuse_add_executed;
 };
 
 /* AVR does not round pushes, but the existence of this macro is

@@ -19,7 +19,6 @@ along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
 #include "config.h"
-#define INCLUDE_MEMORY
 #define INCLUDE_VECTOR
 #include "system.h"
 #include "coretypes.h"
@@ -2423,7 +2422,7 @@ strongly_connected_components::to_json () const
 {
   auto scc_arr = ::make_unique<json::array> ();
   for (int i = 0; i < m_sg.num_nodes (); i++)
-    scc_arr->append (new json::integer_number (get_scc_id (i)));
+    scc_arr->append (::make_unique<json::integer_number> (get_scc_id (i)));
   return scc_arr;
 }
 

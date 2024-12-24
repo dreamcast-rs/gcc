@@ -18,7 +18,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -2424,6 +2423,7 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
 	 component name 're' or 'im' could be found.  */
       if (tgt_expr
 	  && (tgt_expr->expr_type == EXPR_FUNCTION
+	      || tgt_expr->expr_type == EXPR_ARRAY
 	      || (!resolved && tgt_expr->expr_type == EXPR_OP))
 	  && (sym->ts.type == BT_UNKNOWN
 	      || (inferred_type && sym->ts.type != BT_COMPLEX))

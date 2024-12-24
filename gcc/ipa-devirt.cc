@@ -105,7 +105,6 @@ along with GCC; see the file COPYING3.  If not see
   pass_ipa_devirt performs simple speculative devirtualization.
 */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -4132,7 +4131,7 @@ ipa_odr_summary_write (void)
       odr_enum_map = NULL;
     }
 
-  produce_asm (ob, NULL);
+  produce_asm (ob);
   destroy_output_block (ob);
 }
 

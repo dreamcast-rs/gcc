@@ -64,7 +64,6 @@ along with GCC; see the file COPYING3.  If not see
    only difference is that clones are not visible during the
    Generate Summary stage.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -402,6 +401,7 @@ cgraph_node::create_clone (tree new_decl, profile_count prof_count,
         count = count.combine_with_ipa_count (count.ipa () - prof_count.ipa ());
     }
   new_node->decl = new_decl;
+  new_node->order = order;
   new_node->register_symbol ();
   new_node->lto_file_data = lto_file_data;
   new_node->analyzed = analyzed;

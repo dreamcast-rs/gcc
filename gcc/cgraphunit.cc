@@ -157,7 +157,6 @@ along with GCC; see the file COPYING3.  If not see
       and apply simple transformations
 */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -983,6 +982,18 @@ varpool_node::finalize_decl (tree decl)
       || (node->no_reorder && !DECL_COMDAT (node->decl)
 	  && !DECL_ARTIFICIAL (node->decl)))
     node->force_output = true;
+
+  if (flag_openmp)
+    {
+      tree attr = lookup_attribute ("omp allocate", DECL_ATTRIBUTES (decl));
+      if (attr)
+	{
+	  tree align = TREE_VALUE (TREE_VALUE (attr));
+	  if (align)
+	    SET_DECL_ALIGN (decl, MAX (tree_to_uhwi (align) * BITS_PER_UNIT,
+				       DECL_ALIGN (decl)));
+	}
+    }
 
   if (symtab->state == CONSTRUCTION
       && (node->needed_p () || node->referred_to_p ()))

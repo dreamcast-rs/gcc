@@ -44,7 +44,6 @@ along with GCC; see the file COPYING3.  If not see
      mangle_ctor_vtbl_for_type:		`C-in-B' constructor virtual table data
      mangle_thunk:			thunk function or entry  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -2667,6 +2666,12 @@ write_type (tree type)
 	    case TRAIT_TYPE:
 	      error ("use of built-in trait %qT in function signature; "
 		     "use library traits instead", type);
+	      break;
+
+	    case PACK_INDEX_TYPE:
+	      /* TODO Mangle pack indexing
+		 <https://github.com/itanium-cxx-abi/cxx-abi/issues/175>.  */
+	      sorry ("mangling type pack index");
 	      break;
 
 	    case LANG_TYPE:

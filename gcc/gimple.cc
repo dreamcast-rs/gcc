@@ -19,7 +19,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -52,12 +51,36 @@ along with GCC; see the file COPYING3.  If not see
 #include "ipa-modref.h"
 #include "dbgcnt.h"
 
-/* All the tuples have their operand vector (if present) at the very bottom
-   of the structure.  Therefore, the offset required to find the
-   operands vector the size of the structure minus the size of the 1
-   element tree array at the end (see gimple_ops).  */
+/* All the tuples have their operand vector (if present) at the very bottom of
+   the structure.  Therefore, the offset required to find the operands vector is
+   the size of the structure minus the size of the 1-element tree array at the
+   end (see gimple_ops).  An adjustment may be required if there is tail
+   padding, as may happen on a host (e.g. sparc) where a pointer has 4-byte
+   alignment while a uint64_t has 8-byte alignment.
+
+   Unfortunately, we can't use offsetof to do this computation 100%
+   straightforwardly, because these structs use inheritance and so are not
+   standard layout types.  However, the fact that they are not standard layout
+   types also means that tail padding will be reused in inheritance, which makes
+   it possible to check for the problematic case with the following logic
+   instead.  If tail padding is detected, the offset should be decreased
+   accordingly.  */
+
+template<typename G>
+static constexpr size_t
+get_tail_padding_adjustment ()
+{
+  struct padding_check : G
+  {
+    tree t;
+  };
+  return sizeof (padding_check) == sizeof (G) ? sizeof (tree) : 0;
+}
+
 #define DEFGSSTRUCT(SYM, STRUCT, HAS_TREE_OP) \
-	(HAS_TREE_OP ? sizeof (struct STRUCT) - sizeof (tree) : 0),
+  (HAS_TREE_OP \
+   ? sizeof (STRUCT) - sizeof (tree) - get_tail_padding_adjustment<STRUCT> () \
+   : 0),
 EXPORTED_CONST size_t gimple_ops_offset_[] = {
 #include "gsstruct.def"
 };
@@ -1615,12 +1638,22 @@ gimple_call_fnspec (const gcall *stmt)
       && DECL_IS_OPERATOR_DELETE_P (fndecl)
       && DECL_IS_REPLACEABLE_OPERATOR (fndecl)
       && gimple_call_from_new_or_delete (stmt))
-    return ". o ";
+    {
+      if (flag_assume_sane_operators_new_delete)
+	return ".co ";
+      else
+	return ". o ";
+    }
   /* Similarly operator new can be treated as malloc.  */
   if (fndecl
       && DECL_IS_REPLACEABLE_OPERATOR_NEW_P (fndecl)
       && gimple_call_from_new_or_delete (stmt))
-    return "m ";
+    {
+      if (flag_assume_sane_operators_new_delete)
+	return "mC";
+      else
+	return "m ";
+    }
   return "";
 }
 
@@ -3109,10 +3142,17 @@ infer_nonnull_range_by_dereference (gimple *stmt, tree op)
 }
 
 /* Return true if OP can be inferred to be a non-NULL after STMT
-   executes by using attributes.  */
+   executes by using attributes.  If OP2 is non-NULL and nonnull_if_nonzero
+   is the only attribute implying OP being non-NULL and the corresponding
+   argument isn't non-zero INTEGER_CST, set *OP2 to the corresponding
+   argument and return true (in that case returning true doesn't mean
+   OP can be unconditionally inferred to be non-NULL, but conditionally).  */
 bool
-infer_nonnull_range_by_attribute (gimple *stmt, tree op)
+infer_nonnull_range_by_attribute (gimple *stmt, tree op, tree *op2)
 {
+  if (op2)
+    *op2 = NULL_TREE;
+
   /* We can only assume that a pointer dereference will yield
      non-NULL if -fdelete-null-pointer-checks is enabled.  */
   if (!flag_delete_null_pointer_checks
@@ -3129,9 +3169,10 @@ infer_nonnull_range_by_attribute (gimple *stmt, tree op)
 	  attrs = lookup_attribute ("nonnull", attrs);
 
 	  /* If "nonnull" wasn't specified, we know nothing about
-	     the argument.  */
+	     the argument, unless "nonnull_if_nonzero" attribute is
+	     present.  */
 	  if (attrs == NULL_TREE)
-	    return false;
+	    break;
 
 	  /* If "nonnull" applies to all the arguments, then ARG
 	     is non-null if it's in the argument list.  */
@@ -3156,6 +3197,37 @@ infer_nonnull_range_by_attribute (gimple *stmt, tree op)
 		  if (operand_equal_p (op, arg, 0))
 		    return true;
 		}
+	    }
+	}
+
+      for (attrs = TYPE_ATTRIBUTES (fntype);
+	   (attrs = lookup_attribute ("nonnull_if_nonzero", attrs));
+	   attrs = TREE_CHAIN (attrs))
+	{
+	  tree args = TREE_VALUE (attrs);
+	  unsigned int idx = TREE_INT_CST_LOW (TREE_VALUE (args)) - 1;
+	  unsigned int idx2
+	    = TREE_INT_CST_LOW (TREE_VALUE (TREE_CHAIN (args))) - 1;
+	  if (idx < gimple_call_num_args (stmt)
+	      && idx2 < gimple_call_num_args (stmt)
+	      && operand_equal_p (op, gimple_call_arg (stmt, idx), 0))
+	    {
+	      tree arg2 = gimple_call_arg (stmt, idx2);
+	      if (!INTEGRAL_TYPE_P (TREE_TYPE (arg2)))
+		return false;
+	      if (integer_nonzerop (arg2))
+		return true;
+	      if (integer_zerop (arg2))
+		return false;
+	      if (op2)
+		{
+		  /* This case is meant for ubsan instrumentation.
+		     The caller can check at runtime if *OP2 is
+		     non-zero and OP is null.  */
+		  *op2 = arg2;
+		  return true;
+		}
+	      return tree_expr_nonzero_p (arg2);
 	    }
 	}
     }

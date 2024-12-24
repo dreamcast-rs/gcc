@@ -672,6 +672,10 @@ Wdeprecated-non-prototype
 C ObjC Var(warn_deprecated_non_prototype) Init(-1) Warning
 Warn about calls with arguments to functions declared without parameters.
 
+Wdeprecated-variadic-comma-omission
+C++ ObjC++ Var(warn_deprecated_variadic_comma_omission) Warning
+Warn about deprecated omission of comma before ... in varargs function declaration.
+
 Wdesignated-init
 C ObjC Var(warn_designated_init) Init(1) Warning
 Warn about positional initialization of structs requiring designated initializers.
@@ -831,6 +835,10 @@ Warn about printf/scanf/strftime/strfmon format string anomalies.
 Wframe-address
 C ObjC C++ ObjC++ Var(warn_frame_address) Warning LangEnabledBy(C ObjC C++ ObjC++,Wall)
 Warn when __builtin_frame_address or __builtin_return_address is used unsafely.
+
+Wfree-labels
+C ObjC Var(warn_free_labels) Init(-1) Warning
+Warn about labels on declarations and at the end of compound statements.
 
 Wglobal-module
 C++ ObjC++ Var(warn_global_module) Warning Init(1)
@@ -1469,10 +1477,6 @@ Wtemplates
 C++ ObjC++ Var(warn_templates) Warning
 Warn on primary template declaration.
 
-Wtautological-compare
-C ObjC C++ ObjC++ Var(warn_tautological_compare) Warning LangEnabledBy(C ObjC C++ ObjC++,Wall)
-Warn if a comparison always evaluates to true or false.
-
 Wtemplate-body
 C++ ObjC++ Var(warn_template_body) Warning Init(1)
 Diagnose errors when parsing a template.
@@ -1480,6 +1484,10 @@ Diagnose errors when parsing a template.
 Wtemplate-id-cdtor
 C++ ObjC++ Var(warn_template_id_cdtor) Warning
 Warn about simple-template-id in a constructor or destructor.
+
+Wtemplate-names-tu-local
+C++ ObjC++ Var(warn_template_names_tu_local) Warning EnabledBy(Wextra)
+Warn about templates naming TU-local entities in a module.
 
 Wterminate
 C++ ObjC++ Warning Var(warn_terminate) Init(1)
@@ -1689,6 +1697,10 @@ No longer supported.
 fasm
 C ObjC C++ ObjC++ Var(flag_no_asm, 0)
 Recognize the \"asm\" keyword.
+
+fassume-sane-operators-new-delete
+C++ ObjC++ Optimization Var(flag_assume_sane_operators_new_delete) Init(1)
+Assume C++ replaceable global operators new, new[], delete, delete[] don't read or write visible global state.
 
 ; Define extra predefined macros for use in libgcc.
 fbuilding-libgcc

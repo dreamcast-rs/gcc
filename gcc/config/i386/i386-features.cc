@@ -18,7 +18,6 @@ along with GCC; see the file COPYING3.  If not see
 
 #define IN_TARGET_CODE 1
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -3441,7 +3440,7 @@ public:
     {
       return ix86_apx_nf_convert ();
     }
-}; // class pass_rpad
+}; // class pass_apx_nf_convert
 
 } // anon namespace
 

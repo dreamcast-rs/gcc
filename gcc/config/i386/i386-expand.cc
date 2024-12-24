@@ -18,7 +18,6 @@ along with GCC; see the file COPYING3.  If not see
 
 #define IN_TARGET_CODE 1
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -14223,7 +14222,7 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget,
 
 	if (INTVAL (op3) == 1)
 	  {
-	    if (INTVAL (op2) < 2 || INTVAL (op2) > 3)
+	    if (!IN_RANGE (INTVAL (op2), 2, 3))
 	      {
 		error ("invalid third argument");
 		return const0_rtx;
@@ -14253,14 +14252,16 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget,
 		op0 = copy_addr_to_reg (op0);
 	      }
 
-	    if (INTVAL (op2) < 0 || INTVAL (op2) > 3)
+	    if (!IN_RANGE (INTVAL (op2), 0, 3))
 	      {
 		warning (0, "invalid third argument to %<__builtin_ia32_prefetch%>; using zero");
 		op2 = const0_rtx;
 	      }
 
-	    if (TARGET_3DNOW || TARGET_PREFETCH_SSE
-		|| TARGET_PRFCHW)
+	    if (TARGET_3DNOW
+		|| TARGET_PREFETCH_SSE
+		|| TARGET_PRFCHW
+		|| TARGET_MOVRS)
 	      emit_insn (gen_prefetch (op0, op1, op2));
 	    else if (!MEM_P (op0) && side_effects_p (op0))
 	      /* Don't do anything with direct references to volatile memory,
@@ -23103,6 +23104,53 @@ expand_vec_perm_vpshufb2_vpermq_even_odd (struct expand_vec_perm_d *d)
   return true;
 }
 
+/* A subroutine of ix86_expand_vec_perm_const_1. Try to implement a
+   permutation (which is a bland) with and, andnot and or when pshufb is not available.
+
+   It handles case:
+   __builtin_shufflevector (v1, v2, 0, 9, 2, 11, 4, 13, 6, 15);
+   __builtin_shufflevector (v1, v2, 8, 1, 2, 11, 4, 13, 6, 15);
+
+   An element[i] must be chosen between op0[i] and op1[i] to satisfy the
+   requirement.
+ */
+
+static bool
+expand_vec_perm_pand_pandn_por (struct expand_vec_perm_d *d)
+{
+  rtx rperm[16], vperm;
+  unsigned int i, nelt = d->nelt;
+
+  if (!TARGET_SSE2
+      || d->one_operand_p
+      || (d->vmode != V16QImode && d->vmode != V8HImode))
+    return false;
+
+  if (d->perm[0] != 0)
+    return false;
+
+  /* The dest[i] must select an element between op0[i] and op1[i].  */
+  for (i = 1; i < nelt; i++)
+    if ((d->perm[i] % nelt) != i)
+      return false;
+
+  if (d->testing_p)
+     return true;
+
+  /* Generates a blend mask for the operators AND and ANDNOT.  */
+  machine_mode inner_mode = GET_MODE_INNER (d->vmode);
+  for (i = 0; i < nelt; i++)
+    rperm[i] = (d->perm[i] <  nelt) ? CONSTM1_RTX (inner_mode)
+      : CONST0_RTX (inner_mode);
+
+  vperm = gen_rtx_CONST_VECTOR (d->vmode, gen_rtvec_v (nelt, rperm));
+  vperm = force_reg (d->vmode, vperm);
+
+  ix86_expand_sse_movcc (d->target, vperm, d->op0, d->op1);
+
+  return true;
+}
+
 /* Implement permutation with pslldq + psrldq + por when pshufb is not
    available.  */
 static bool
@@ -24160,6 +24208,9 @@ ix86_expand_vec_perm_const_1 (struct expand_vec_perm_d *d)
     return true;
 
   if (expand_vec_perm_psrlw_psllw_por (d))
+    return true;
+
+  if (expand_vec_perm_pand_pandn_por (d))
     return true;
 
   /* Try sequences of four instructions.  */

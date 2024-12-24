@@ -19,7 +19,6 @@ along with GCC; see the file COPYING3.  If not see
 
 #define IN_TARGET_CODE 1
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -1085,7 +1084,8 @@ bpf_expand_builtin (tree exp, rtx target ATTRIBUTE_UNUSED,
 #define TARGET_EXPAND_BUILTIN bpf_expand_builtin
 
 static tree
-bpf_resolve_overloaded_builtin (location_t loc, tree fndecl, void *arglist)
+bpf_resolve_overloaded_builtin (location_t loc, tree fndecl, void *arglist,
+				bool complain ATTRIBUTE_UNUSED)
 {
   int code = DECL_MD_FUNCTION_CODE (fndecl);
   if (code > BPF_CORE_BUILTINS_MARKER)
@@ -1449,6 +1449,9 @@ bpf_expand_setmem (rtx *operands)
 
   return true;
 }
+
+#undef TARGET_DOCUMENTATION_NAME
+#define TARGET_DOCUMENTATION_NAME "BPF"
 
 /* Finally, build the GCC target.  */
 

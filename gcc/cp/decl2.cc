@@ -26,7 +26,6 @@ along with GCC; see the file COPYING3.  If not see
 /* ??? not all decl nodes are given the most useful possible
    line numbers.  For example, the CONST_DECLs for enum values.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -1020,6 +1019,7 @@ finish_static_data_member_decl (tree decl,
     }
 
   cp_finish_decl (decl, init, init_const_expr_p, asmspec_tree, flags);
+  check_module_decl_linkage (decl);
 }
 
 /* DECLARATOR and DECLSPECS correspond to a class member.  The other

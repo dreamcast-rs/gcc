@@ -18,7 +18,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -542,9 +541,12 @@ simd_clone_mangle (struct cgraph_node *node,
   pp_string (&pp, "_ZGV");
   pp_character (&pp, vecsize_mangle);
   pp_character (&pp, mask);
-  /* For now, simdlen is always constant, while variable simdlen pp 'n'.  */
-  unsigned int len = simdlen.to_constant ();
-  pp_decimal_int (&pp, (len));
+
+  unsigned HOST_WIDE_INT len;
+  if (simdlen.is_constant (&len))
+    pp_decimal_int (&pp, (int) (len));
+  else
+    pp_character (&pp, 'x');
 
   for (n = 0; n < clone_info->nargs; ++n)
     {
@@ -1534,8 +1536,8 @@ simd_clone_adjust (struct cgraph_node *node)
 	 below).  */
       loop = alloc_loop ();
       cfun->has_force_vectorize_loops = true;
-      /* For now, simlen is always constant.  */
-      loop->safelen = node->simdclone->simdlen.to_constant ();
+      /* We can assert that safelen is the 'minimum' simdlen.  */
+      loop->safelen = constant_lower_bound (node->simdclone->simdlen);
       loop->force_vectorize = true;
       loop->header = body_bb;
     }

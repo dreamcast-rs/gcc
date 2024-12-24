@@ -19,7 +19,6 @@
    <http://www.gnu.org/licenses/>.  */
 
 #include "config.h"
-#define INCLUDE_MEMORY
 #define INCLUDE_STRING
 #include "system.h"
 #include "coretypes.h"
@@ -445,6 +444,33 @@ aarch64_rewrite_mcpu (int argc, const char **argv)
 {
   gcc_assert (argc);
   return aarch64_rewrite_selected_cpu (argv[argc - 1]);
+}
+
+/* Checks to see if the host CPU may not be Cortex-A53 or an unknown Armv8-a
+   baseline CPU.  */
+
+const char *
+is_host_cpu_not_armv8_base (int argc, const char **argv)
+{
+  gcc_assert (argc);
+
+  /* Default to not knowing what we are if unspecified.  The SPEC file should
+     have already mapped configure time options to here through
+     OPTION_DEFAULT_SPECS so we don't need to check the configure variants
+     manually.  */
+  if (!argv[0])
+    return NULL;
+
+  const char *res = argv[0];
+
+  /* No SVE system is baseline Armv8-A.  */
+  if (strstr (res, "+sve"))
+    return "";
+
+  if (strstr (res, "cortex-a53") || strstr (res, "armv8-a"))
+    return NULL;
+
+  return "";
 }
 
 struct gcc_targetm_common targetm_common = TARGETM_COMMON_INITIALIZER;

@@ -663,7 +663,6 @@ get_reload_reg (enum op_type type, machine_mode mode, rtx original,
 {
   int i, regno;
   enum reg_class new_class;
-  bool unique_p = false;
 
   if (type == OP_OUT)
     {
@@ -702,6 +701,8 @@ get_reload_reg (enum op_type type, machine_mode mode, rtx original,
 						exclude_start_hard_regs, title);
       return true;
     }
+
+  bool unique_p = early_clobber_p;
   /* Prevent reuse value of expression with side effects,
      e.g. volatile memory.  */
   if (! side_effects_p (original))
@@ -895,6 +896,11 @@ operands_match_p (rtx x, rtx y, int y_hard_regno)
 
 	case 'i':
 	  if (XINT (x, i) != XINT (y, i))
+	    return false;
+	  break;
+
+	case 'L':
+	  if (XLOC (x, i) != XLOC (y, i))
 	    return false;
 	  break;
 

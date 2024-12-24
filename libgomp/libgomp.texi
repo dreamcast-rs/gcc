@@ -6687,9 +6687,10 @@ smaller number.  On non-host devices, the value of the
 @c has to be implemented; cf. also PR target/105640.
 @c For offload devices, add *additionally* gcc/config/*/t-omp-device.
 
-For the host compiler, @code{kind} always matches @code{host}; for the
-offloading architectures AMD GCN and Nvidia PTX, @code{kind} always matches
-@code{gpu}.  For the x86 family of computers, AMD GCN and Nvidia PTX
+For the host compiler, @code{kind} always matches @code{host}, @code{cpu}
+and @code{any}; for the offloading architectures AMD GCN and Nvidia PTX,
+@code{kind} always matches @code{nohost}, @code{gpu} and @code{any}.
+For the x86 family of computers, AMD GCN and Nvidia PTX
 the following traits are supported in addition; while OpenMP is supported
 on more architectures, GCC currently does not match any @code{arch} or
 @code{isa} traits for those.
@@ -6731,6 +6732,12 @@ The description below applies to:
       compiled with @option{-fopenmp-allocators}.  Additionally, all files that
       might explicitly or implicitly deallocate memory allocated that way must
       also be compiled with that option.
+@item The used alignment is the maximum of the value the @code{align} clause
+      and the alignment of the type after honoring, if present, the
+      @code{aligned} (@code{GNU::aligned}) attribute and C's @code{_Alignas}
+      and C++'s @code{alignas}.  However, the @code{align} clause of the
+      @code{allocate} directive has no effect on the value of C's
+      @code{_Alignof} and C++'s @code{alignof}.
 @end itemize
 
 For the available predefined allocators and, as applicable, their associated
@@ -6966,8 +6973,10 @@ The implementation remark:
       memory-copy functions of the CUDA library.  Higher dimensions will
       call those functions in a loop and are therefore supported.
 @item Low-latency memory (@code{omp_low_lat_mem_space}) is supported when the
-      the @code{access} trait is set to @code{cgroup}, the ISA is at least
-      @code{sm_53}, and the PTX version is at least 4.1.  The default pool size
+      the @code{access} trait is set to @code{cgroup}, and libgomp has
+      been built for PTX ISA version 4.1 or higher (such as in GCC's
+      default configuration).  @c -mptx=4.1
+      The default pool size
       is 8 kiB per team, but may be adjusted at runtime by setting environment
       variable @code{GOMP_NVPTX_LOWLAT_POOL=@var{bytes}}.  The maximum value is
       limited by the available hardware, and care should be taken that the

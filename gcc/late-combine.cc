@@ -30,7 +30,6 @@
 
 #define INCLUDE_ALGORITHM
 #define INCLUDE_FUNCTIONAL
-#define INCLUDE_MEMORY
 #define INCLUDE_ARRAY
 #include "config.h"
 #include "system.h"
@@ -731,6 +730,10 @@ late_combine::execute (function *fn)
   // Finalization.
   if (crtl->ssa->perform_pending_updates ())
     cleanup_cfg (0);
+
+  delete crtl->ssa;
+  crtl->ssa = nullptr;
+
   // Make the recognizer allow volatile MEMs again.
   init_recog ();
   free_dominance_info (CDI_DOMINATORS);

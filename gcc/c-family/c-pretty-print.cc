@@ -18,7 +18,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -754,7 +753,8 @@ c_pretty_printer::storage_class_specifier (tree t)
     pp_c_ws_string (this, "typedef");
   else if (DECL_P (t))
     {
-      if (DECL_REGISTER (t))
+      if ((TREE_CODE (t) == PARM_DECL || VAR_P (t))
+	  && DECL_REGISTER (t))
 	pp_c_ws_string (this, "register");
       else if (TREE_STATIC (t) && VAR_P (t))
 	pp_c_ws_string (this, "static");

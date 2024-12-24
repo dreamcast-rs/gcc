@@ -18,7 +18,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -234,6 +233,7 @@ cp_tree_size (enum tree_code code)
     case ASSERTION_STMT:	return sizeof (tree_exp);
     case PRECONDITION_STMT:	return sizeof (tree_exp);
     case POSTCONDITION_STMT:	return sizeof (tree_exp);
+    case TU_LOCAL_ENTITY:	return sizeof (tree_tu_local_entity);
     default:
       switch (TREE_CODE_CLASS (code))
 	{
@@ -611,6 +611,8 @@ cp_register_dumps (gcc::dump_manager *dumps)
 
   raw_dump_id = dumps->dump_register
     (".raw", "lang-raw", "lang-raw", DK_lang, OPTGROUP_NONE, false);
+  coro_dump_id = dumps->dump_register
+    (".coro", "lang-coro", "lang-coro", DK_lang, OPTGROUP_NONE, false);
 }
 
 void
@@ -629,7 +631,6 @@ cp_common_init_ts (void)
 
   /* New decls.  */
   MARK_TS_DECL_COMMON (TEMPLATE_DECL);
-  MARK_TS_DECL_COMMON (WILDCARD_DECL);
 
   MARK_TS_DECL_NON_COMMON (USING_DECL);
 
@@ -646,6 +647,7 @@ cp_common_init_ts (void)
   MARK_TS_TYPE_NON_COMMON (TEMPLATE_TEMPLATE_PARM);
   MARK_TS_TYPE_NON_COMMON (TEMPLATE_TYPE_PARM);
   MARK_TS_TYPE_NON_COMMON (TYPE_PACK_EXPANSION);
+  MARK_TS_TYPE_NON_COMMON (PACK_INDEX_TYPE);
 
   /* Statements.  */
   MARK_TS_EXP (CLEANUP_STMT);
@@ -703,6 +705,7 @@ cp_common_init_ts (void)
   MARK_TS_EXP (NONTYPE_ARGUMENT_PACK);
   MARK_TS_EXP (UNARY_LEFT_FOLD_EXPR);
   MARK_TS_EXP (UNARY_RIGHT_FOLD_EXPR);
+  MARK_TS_EXP (PACK_INDEX_EXPR);
 
   /* Constraints.  */
   MARK_TS_EXP (COMPOUND_REQ);

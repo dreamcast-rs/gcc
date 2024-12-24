@@ -1,3 +1,63 @@
+2024-12-24  Hans-Peter Nilsson  <hp@axis.com>
+
+	* caf/single.c (_gfortran_caf_get_by_ct): Correct type of free_buffer
+	to int32_t.
+
+2024-12-22  Andre Vehreschild  <vehre@gcc.gnu.org>
+
+	* caf/libcaf.h (_gfortran_caf_register_accessor): New function
+	to register access routines at runtime.
+	(_gfortran_caf_register_accessors_finish): New function to
+	finish registration of access routine and sort hash map.
+	(_gfortran_caf_get_remote_function_index): New function to
+	convert an hash to an index.
+	(_gfortran_caf_get_by_ct): New function to get data from a
+	remote image using the access routine given by an index.
+	* caf/single.c (struct accessor_hash_t): Hashmap type.
+	(_gfortran_caf_send): Fixed formatting.
+	(_gfortran_caf_register_accessor): Register a hash accessor
+	routine.
+	(hash_compare): Compare two hashes for sort() and bsearch().
+	(_gfortran_caf_register_accessors_finish): Sort the hashmap to
+	allow bsearch()'s quick lookup.
+	(_gfortran_caf_get_remote_function_index): Map a hash to an
+	index.
+	(_gfortran_caf_get_by_ct): Get data from a remote image using
+	the index provided by get_remote_function_index().
+
+2024-12-20  Andre Vehreschild  <vehre@gcc.gnu.org>
+
+	PR fortran/57598
+	* caf/single.c (_gfortran_caf_stop_numeric): Report exceptions
+	on stop. And fix send_by_ref.
+	(_gfortran_caf_stop_str): Same.
+	(_gfortran_caf_error_stop_str): Same.
+	(_gfortran_caf_error_stop): Same.
+	* gfortran.map: Add report_exception for export.
+	* libgfortran.h (report_exception): Add to internal export.
+	* runtime/stop.c (report_exception): Same.
+
+2024-12-10  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/117819
+	* io/read.c (read_decimal): If the read value is short of the
+	specified width and pad mode is PAD yes, check for BLANK ZERO
+	and adjust the value accordingly.
+	(read_decimal_unsigned): Likewise.
+	(read_radix): Likewise.
+
+2024-12-04  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/117820
+	* io/write.c (write_b): Add test for zero needed by write_boz.
+
+2024-11-23  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/88052
+	* io/format.c (parse_format_list): Reject missing comma in
+	format strings by default or if -std=f95 or higher. This is
+	a runtime error.
+
 2024-10-07  Thomas Koenig  <tkoenig@gcc.gnu.org>
 
 	* Makefile.am: Add files for unsigned MINLOC and MAXLOC.

@@ -19,7 +19,6 @@ along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
 #include "config.h"
-#define INCLUDE_MEMORY
 #include "system.h"
 #include "coretypes.h"
 #include "cp-tree.h"
@@ -4569,6 +4568,8 @@ lookup_imported_hidden_friend (tree friend_tmpl)
       || !DECL_MODULE_IMPORT_P (inner))
     return NULL_TREE;
 
+  lazy_load_pendings (friend_tmpl);
+
   tree bind = get_mergeable_namespace_binding
     (current_namespace, DECL_NAME (inner), DECL_MODULE_ATTACH_P (inner));
   if (!bind)
@@ -6605,7 +6606,7 @@ pop_decl_namespace (void)
 /* Process a namespace-alias declaration.  */
 
 void
-do_namespace_alias (tree alias, tree name_space)
+do_namespace_alias (location_t loc, tree alias, tree name_space)
 {
   if (name_space == error_mark_node)
     return;
@@ -6615,11 +6616,11 @@ do_namespace_alias (tree alias, tree name_space)
   name_space = ORIGINAL_NAMESPACE (name_space);
 
   /* Build the alias.  */
-  alias = build_lang_decl (NAMESPACE_DECL, alias, void_type_node);
+  alias = build_lang_decl_loc (loc, NAMESPACE_DECL, alias, void_type_node);
   DECL_NAMESPACE_ALIAS (alias) = name_space;
   DECL_EXTERNAL (alias) = 1;
   DECL_CONTEXT (alias) = FROB_CONTEXT (current_scope ());
-  TREE_PUBLIC (alias) = TREE_PUBLIC (DECL_CONTEXT (alias));
+  TREE_PUBLIC (alias) = TREE_PUBLIC (CP_DECL_CONTEXT (alias));
 
   alias = pushdecl (alias);
 
@@ -6627,6 +6628,7 @@ do_namespace_alias (tree alias, tree name_space)
     return;
 
   set_originating_module (alias);
+  check_module_decl_linkage (alias);
 
   /* Emit debug info for namespace alias.  */
   if (!building_stmt_list_p ())
@@ -7178,6 +7180,17 @@ suggest_alternatives_for_1 (location_t location, tree name,
 	return hint;
     }
 
+  /* Look for exact matches for builtin defines that would have been
+     defined if the user had passed a command-line option (e.g. -fopenmp
+     for "_OPENMP").  */
+  diagnostic_option_id option_id
+    = get_option_for_builtin_define (IDENTIFIER_POINTER (name));
+  if (option_id.m_idx > 0)
+    return name_hint (nullptr,
+		      new suggest_missing_option (location,
+						  IDENTIFIER_POINTER (name),
+						  option_id));
+
   /* Otherwise, consider misspellings.  */
   if (!suggest_misspellings)
     return name_hint ();
@@ -7337,6 +7350,9 @@ suggest_alternative_in_explicit_scope (location_t location, tree name,
 {
   /* Something went very wrong; don't suggest anything.  */
   if (name == error_mark_node)
+    return name_hint ();
+
+  if (TREE_CODE (scope) != NAMESPACE_DECL)
     return name_hint ();
 
   /* Resolve any namespace aliases.  */
@@ -8554,6 +8570,7 @@ pushtag (tree name, tree type, TAG_how how)
   /* Set type visibility now if this is a forward declaration.  */
   TREE_PUBLIC (decl) = 1;
   determine_visibility (decl);
+  check_module_decl_linkage (decl);
 
   return type;
 }
@@ -9106,6 +9123,11 @@ make_namespace_finish (tree ns, tree *slot, bool from_import = false)
 
   if (DECL_NAMESPACE_INLINE_P (ns) || !DECL_NAME (ns))
     emit_debug_info_using_namespace (ctx, ns, true);
+
+  /* An unnamed namespace implicitly has a using-directive inserted so
+     that its contents are usable in the surrounding context.  */
+  if (!DECL_NAMESPACE_INLINE_P (ns) && !DECL_NAME (ns))
+    add_using_namespace (NAMESPACE_LEVEL (ctx)->using_directives, ns);
 }
 
 /* Push into the scope of the NAME namespace.  If NAME is NULL_TREE,
@@ -9242,11 +9264,6 @@ push_namespace (tree name, bool make_inline)
 	      gcc_checking_assert (slot);
 	    }
 	  make_namespace_finish (ns, slot);
-
-	  /* Add the anon using-directive here, we don't do it in
-	     make_namespace_finish.  */
-	  if (!DECL_NAMESPACE_INLINE_P (ns) && !name)
-	    add_using_namespace (current_binding_level->using_directives, ns);
 	}
     }
 
@@ -9259,8 +9276,18 @@ push_namespace (tree name, bool make_inline)
 	  if (TREE_PUBLIC (ns))
 	    DECL_MODULE_EXPORT_P (ns) = true;
 	  else if (!header_module_p ())
-	    error_at (input_location,
-		      "exporting namespace with internal linkage");
+	    {
+	      if (name)
+		{
+		  auto_diagnostic_group d;
+		  error_at (input_location, "exporting namespace %qD with "
+			    "internal linkage", ns);
+		  inform (input_location, "%qD has internal linkage because "
+			  "it was declared in an unnamed namespace", ns);
+		}
+	      else
+		error_at (input_location, "exporting unnamed namespace");
+	    }
 	}
       if (module_purview_p ())
 	DECL_MODULE_PURVIEW_P (ns) = true;

@@ -637,8 +637,8 @@ LD_PICFLAG
 PICFLAG
 enable_default_pie
 enable_host_bind_now
-LIBDIAGNOSTICS
-enable_libdiagnostics
+LIBGDIAGNOSTICS
+enable_libgdiagnostics
 enable_host_pie
 enable_host_shared
 enable_plugin
@@ -1056,7 +1056,7 @@ enable_version_specific_runtime_libs
 enable_plugin
 enable_host_shared
 enable_host_pie
-enable_libdiagnostics
+enable_libgdiagnostics
 enable_host_bind_now
 enable_libquadmath_support
 with_linker_hash_style
@@ -1832,7 +1832,8 @@ Optional Features:
   --enable-plugin         enable plugin support
   --enable-host-shared    build host code as shared libraries
   --enable-host-pie       build host code as PIE
-  --enable-libdiagnostics build libdiagnostics shared library
+  --enable-libgdiagnostics
+                          build libgdiagnostics shared library
   --enable-host-bind-now  link host code as BIND_NOW
   --disable-libquadmath-support
                           disable libquadmath support for Fortran
@@ -1875,7 +1876,7 @@ Optional Packages:
                           generic when splitting match.pd. [default=10]
   --with-insnemit-partitions=num
                           Set the number of partitions of insn-emit.cc for
-                          genemit to create. [default=10]
+                          genemit and genrecog to create. [default=10]
   --with-dwarf2           force the default debug format to be DWARF 2 (or
                           later)
   --with-specs=SPECS      add SPECS to driver command-line processing
@@ -1885,8 +1886,8 @@ Optional Packages:
                           Root for documentation URLs
   --with-changes-root-url=URL
                           Root for GCC changes URLs
-  --with-multilib-list    select multilibs (AArch64, ARM, AVR, OR1K, RISC-V,
-                          SH and x86-64 only)
+  --with-multilib-list    select multilibs (AArch64, ARM, AVR, nvptx, OR1K,
+                          RISC-V, SH and x86-64 only)
   --with-multilib-generator
                           Multi-libs configuration string (RISC-V only)
   --with-zstd=PATH        specify prefix directory for installed zstd library.
@@ -5475,12 +5476,28 @@ ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ex
 ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
 
 
-# Remove the -O2: for historical reasons, unless bootstrapping we prefer
+# Remove all -O flags: for historical reasons, unless bootstrapping we prefer
 # optimizations to be activated explicitly by the toplevel.
 case "$CC" in
   */prev-gcc/xgcc*) ;;
-  *) CFLAGS=`echo "$CFLAGS " | sed -e "s/-Ofast[ 	]//" -e "s/-O[gs][ 	]//" -e "s/-O[0-9]*[ 	]//" `
-     CXXFLAGS=`echo "$CXXFLAGS " | sed -e "s/-Ofast[ 	]//" -e "s/-O[gs][ 	]//" -e "s/-O[0-9]*[ 	]//" ` ;;
+  *)
+    new_CFLAGS=
+    for flag in $CFLAGS; do
+      case $flag in
+	-O*) ;;
+	*) new_CFLAGS="$new_CFLAGS $flag" ;;
+      esac
+    done
+    CFLAGS=$new_CFLAGS
+    new_CXXFLAGS=
+    for flag in $CXXFLAGS; do
+      case $flag in
+	-O*) ;;
+	*) new_CXXFLAGS="$new_CXXFLAGS $flag" ;;
+      esac
+    done
+    CXXFLAGS=$new_CXXFLAGS
+    ;;
 esac
 
 
@@ -7922,7 +7939,7 @@ fi
 
 
 
-# Specify the number of splits of insn-emit.cc to generate.
+# Specify the number of splits of insn-emit.cc and insn-recog.cc to generate.
 
 # Check whether --with-insnemit-partitions was given.
 if test "${with_insnemit_partitions+set}" = set; then :
@@ -21474,7 +21491,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 21463 "configure"
+#line 21480 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -21580,7 +21597,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 21569 "configure"
+#line 21586 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -25956,6 +25973,38 @@ $as_echo "#define HAVE_GAS_BASE64 1" >>confdefs.h
 fi
 
 
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for .cv_ucomp" >&5
+$as_echo_n "checking assembler for .cv_ucomp... " >&6; }
+if ${gcc_cv_as_cv_ucomp+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  gcc_cv_as_cv_ucomp=no
+  if test x$gcc_cv_as != x; then
+    $as_echo '.cv_ucomp 0' > conftest.s
+    if { ac_try='$gcc_cv_as $gcc_cv_as_flags  -o conftest.o conftest.s >&5'
+  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; }
+    then
+	gcc_cv_as_cv_ucomp=yes
+    else
+      echo "configure: failed program was" >&5
+      cat conftest.s >&5
+    fi
+    rm -f conftest.o conftest.s
+  fi
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_as_cv_ucomp" >&5
+$as_echo "$gcc_cv_as_cv_ucomp" >&6; }
+if test $gcc_cv_as_cv_ucomp = yes; then
+
+$as_echo "#define HAVE_GAS_CV_UCOMP 1" >>confdefs.h
+
+fi
+
+
 # gnu_indirect_function type is an extension proposed at
 # http://groups.google/com/group/generic-abi/files. It allows dynamic runtime
 # selection of function implementation
@@ -27510,11 +27559,6 @@ foo:
 	move.l x@TLSIE(%a5),%a0
 	move.l x@TLSLE(%a5),%a0'
 	tls_as_opt='--fatal-warnings'
-	;;
-  nios2-*-*)
-      conftest_s='
-	.section ".tdata","awT",@progbits'
-	tls_as_opt="--fatal-warnings"
 	;;
   aarch64*-*-*)
     conftest_s='
@@ -30790,43 +30834,6 @@ $as_echo "#define HAVE_NEWLIB_NANO_FORMATTED_IO 1" >>confdefs.h
 
       fi
     ;;
-    nios2-*-*)
-    # Versions 2.33 and earlier lacked support for the %gotoff relocation
-    # syntax that is documented in the ABI specification.
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for support for %gotoff relocations in constant data" >&5
-$as_echo_n "checking assembler for support for %gotoff relocations in constant data... " >&6; }
-if ${gcc_cv_as_nios2_gotoff_relocation+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  gcc_cv_as_nios2_gotoff_relocation=no
-  if test x$gcc_cv_as != x; then
-    $as_echo '	.extern foo
-	.data
-	.long %gotoff(foo)' > conftest.s
-    if { ac_try='$gcc_cv_as $gcc_cv_as_flags  -o conftest.o conftest.s >&5'
-  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-  test $ac_status = 0; }; }
-    then
-	gcc_cv_as_nios2_gotoff_relocation=yes
-    else
-      echo "configure: failed program was" >&5
-      cat conftest.s >&5
-    fi
-    rm -f conftest.o conftest.s
-  fi
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_as_nios2_gotoff_relocation" >&5
-$as_echo "$gcc_cv_as_nios2_gotoff_relocation" >&6; }
-if test $gcc_cv_as_nios2_gotoff_relocation = yes; then
-
-$as_echo "#define HAVE_AS_NIOS2_GOTOFF_RELOCATION 1" >>confdefs.h
-
-fi
-
-    ;;
     riscv*-*-*)
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking assembler for .attribute support" >&5
 $as_echo_n "checking assembler for .attribute support... " >&6; }
@@ -31465,7 +31472,7 @@ esac
 # version to the per-target configury.
 case "$cpu_type" in
   aarch64 | alpha | arc | arm | avr | bfin | cris | csky | i386 | loongarch | m32c \
-  | m68k | microblaze | mips | nds32 | nios2 | pa | riscv | rs6000 | score | sparc \
+  | m68k | microblaze | mips | nds32 | pa | riscv | rs6000 | score | sparc \
   | visium | xstormy16 | xtensa | ft32)
     insn="nop"
     ;;
@@ -33856,8 +33863,8 @@ for language in $all_selected_languages
 do
 	check_languages="$check_languages check-$language"
 done
-if test x$enable_libdiagnostics = xyes; then
-	check_languages="$check_languages check-libdiagnostics check-sarif-replay"
+if test x$enable_libgdiagnostics = xyes; then
+	check_languages="$check_languages check-libgdiagnostics check-sarif-replay"
 fi
 
 selftest_languages=
@@ -34297,17 +34304,17 @@ fi
 
 
 
-# Check whether --enable-libdiagnostics was given.
-if test "${enable_libdiagnostics+set}" = set; then :
-  enableval=$enable_libdiagnostics;
+# Check whether --enable-libgdiagnostics was given.
+if test "${enable_libgdiagnostics+set}" = set; then :
+  enableval=$enable_libgdiagnostics;
 fi
 
 
 
-if test "$enable_libdiagnostics" = "yes"; then
-  LIBDIAGNOSTICS='libdiagnostics sarif-replay'
+if test "$enable_libgdiagnostics" = "yes"; then
+  LIBGDIAGNOSTICS='libgdiagnostics sarif-replay'
 else
-  LIBDIAGNOSTICS=''
+  LIBGDIAGNOSTICS=''
 fi
 
 
@@ -36318,7 +36325,7 @@ $as_echo "$as_me: executing $ac_file commands" >&6;}
     "depdir":C) $SHELL $ac_aux_dir/mkinstalldirs $DEPDIR ;;
     "gccdepdir":C)
   ${CONFIG_SHELL-/bin/sh} $ac_aux_dir/mkinstalldirs build/$DEPDIR
-  for lang in $subdirs c-family common analyzer text-art rtl-ssa
+  for lang in $subdirs c-family common analyzer text-art rtl-ssa sym-exec
   do
       ${CONFIG_SHELL-/bin/sh} $ac_aux_dir/mkinstalldirs $lang/$DEPDIR
   done ;;

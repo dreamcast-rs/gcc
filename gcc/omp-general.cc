@@ -19,7 +19,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -1164,7 +1163,7 @@ static const char *const kind_properties[] =
   { "host", "nohost", "cpu", "gpu", "fpga", "any", NULL };
 static const char *const vendor_properties[] =
   { "amd", "arm", "bsc", "cray", "fujitsu", "gnu", "hpe", "ibm", "intel",
-    "llvm", "nvidia", "pgi", "ti", "unknown", NULL };
+    "llvm", "nec", "nvidia", "pgi", "ti", "unknown", NULL };
 static const char *const extension_properties[] =
   { NULL };
 static const char *const atomic_default_mem_order_properties[] =
@@ -3158,7 +3157,7 @@ oacc_verify_routine_clauses (tree fndecl, tree *clauses, location_t loc,
 	  /* See <https://gcc.gnu.org/PR93465>; the semantics of combining
 	     OpenACC and OpenMP 'target' are not clear.  */
 	  error_at (loc,
-		    "cannot apply %<%s%> to %qD, which has also been"
+		    "cannot apply %qs to %qD, which has also been"
 		    " marked with an OpenMP 'declare target' directive",
 		    routine_str, fndecl);
 	  /* Incompatible.  */
@@ -3213,14 +3212,14 @@ oacc_verify_routine_clauses (tree fndecl, tree *clauses, location_t loc,
       if (c_diag != NULL_TREE)
 	error_at (OMP_CLAUSE_LOCATION (c_diag),
 		  "incompatible %qs clause when applying"
-		  " %<%s%> to %qD, which has already been"
+		  " %qs to %qD, which has already been"
 		  " marked with an OpenACC 'routine' directive",
 		  omp_clause_code_name[OMP_CLAUSE_CODE (c_diag)],
 		  routine_str, fndecl);
       else if (c_diag_p != NULL_TREE)
 	error_at (loc,
 		  "missing %qs clause when applying"
-		  " %<%s%> to %qD, which has already been"
+		  " %qs to %qD, which has already been"
 		  " marked with an OpenACC 'routine' directive",
 		  omp_clause_code_name[OMP_CLAUSE_CODE (c_diag_p)],
 		  routine_str, fndecl);
@@ -3501,7 +3500,7 @@ static const char* omp_interop_fr_str[] = {"cuda", "cuda_driver", "opencl",
 
 /* Returns the foreign-runtime ID if found or 0 otherwise.  */
 
-int
+char
 omp_get_fr_id_from_name (const char *str)
 {
   static_assert (GOMP_INTEROP_IFR_LAST == ARRAY_SIZE (omp_interop_fr_str), "");
@@ -3509,7 +3508,7 @@ omp_get_fr_id_from_name (const char *str)
   for (unsigned i = 0; i < ARRAY_SIZE (omp_interop_fr_str); ++i)
     if (!strcmp (str, omp_interop_fr_str[i]))
       return i + 1;
-  return 0;
+  return GOMP_INTEROP_IFR_UNKNOWN;
 }
 
 /* Returns the string value to a foreign-runtime integer value or NULL if value
@@ -3519,7 +3518,7 @@ const char *
 omp_get_name_from_fr_id (int fr_id)
 {
   if (fr_id < 1 || fr_id > (int) ARRAY_SIZE (omp_interop_fr_str))
-    return NULL;
+    return "<unknown>";
   return omp_interop_fr_str[fr_id-1];
 }
 

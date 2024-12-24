@@ -23,7 +23,6 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#define INCLUDE_MEMORY
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -807,7 +806,8 @@ c_gimplify_expr (tree *expr_p, gimple_seq *pre_p ATTRIBUTE_UNUSED,
 	   We should get rid of this conversion when we have a proper
 	   type demotion/promotion pass.  */
 	tree *op1_p = &TREE_OPERAND (*expr_p, 1);
-	if (!VECTOR_TYPE_P (TREE_TYPE (*op1_p))
+	if (!error_operand_p (*op1_p)
+	    && !VECTOR_TYPE_P (TREE_TYPE (*op1_p))
 	    && !types_compatible_p (TYPE_MAIN_VARIANT (TREE_TYPE (*op1_p)),
 				    unsigned_type_node)
 	    && !types_compatible_p (TYPE_MAIN_VARIANT (TREE_TYPE (*op1_p)),

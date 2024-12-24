@@ -853,7 +853,8 @@ bool aarch64_and_bitmask_imm (unsigned HOST_WIDE_INT val_in, machine_mode mode);
 int aarch64_branch_cost (bool, bool);
 enum aarch64_symbol_type aarch64_classify_symbolic_expression (rtx);
 bool aarch64_advsimd_struct_mode_p (machine_mode mode);
-opt_machine_mode aarch64_vq_mode (scalar_mode);
+opt_machine_mode aarch64_v64_mode (scalar_mode);
+opt_machine_mode aarch64_v128_mode (scalar_mode);
 opt_machine_mode aarch64_full_sve_mode (scalar_mode);
 bool aarch64_can_const_movi_rtx_p (rtx x, machine_mode mode);
 bool aarch64_const_vec_all_same_int_p (rtx, HOST_WIDE_INT);
@@ -1017,6 +1018,7 @@ void aarch64_expand_mov_immediate (rtx, rtx);
 rtx aarch64_stack_protect_canary_mem (machine_mode, rtx, aarch64_salt_type);
 rtx aarch64_ptrue_reg (machine_mode);
 rtx aarch64_ptrue_reg (machine_mode, unsigned int);
+rtx aarch64_ptrue_reg (machine_mode, machine_mode);
 rtx aarch64_pfalse_reg (machine_mode);
 bool aarch64_sve_same_pred_for_ptest_p (rtx *, rtx *);
 void aarch64_emit_sve_pred_move (rtx, rtx, rtx);
@@ -1026,6 +1028,7 @@ rtx aarch64_replace_reg_mode (rtx, machine_mode);
 void aarch64_split_sve_subreg_move (rtx, rtx, rtx);
 void aarch64_expand_prologue (void);
 void aarch64_expand_vector_init (rtx, rtx);
+void aarch64_sve_expand_vector_init_subvector (rtx, rtx);
 void aarch64_sve_expand_vector_init (rtx, rtx);
 void aarch64_init_cumulative_args (CUMULATIVE_ARGS *, const_tree, rtx,
 				   const_tree, unsigned, bool = false);
@@ -1093,7 +1096,6 @@ void aarch64_finish_ldpstp_peephole (rtx *, bool,
 
 void aarch64_expand_sve_vec_cmp_int (rtx, rtx_code, rtx, rtx);
 bool aarch64_expand_sve_vec_cmp_float (rtx, rtx_code, rtx, rtx, bool);
-void aarch64_expand_sve_vcond (machine_mode, machine_mode, rtx *);
 
 bool aarch64_prepare_sve_int_fma (rtx *, rtx_code);
 bool aarch64_prepare_sve_cond_int_fma (rtx *, rtx_code);
@@ -1119,6 +1121,18 @@ bool aarch64_general_check_builtin_call (location_t, vec<location_t>,
 					 unsigned int, tree, unsigned int,
 					 tree *);
 
+namespace aarch64 {
+  void report_non_ice (location_t, tree, unsigned int);
+  void report_out_of_range (location_t, tree, unsigned int, HOST_WIDE_INT,
+			    HOST_WIDE_INT, HOST_WIDE_INT);
+  void report_neither_nor (location_t, tree, unsigned int, HOST_WIDE_INT,
+			   HOST_WIDE_INT, HOST_WIDE_INT);
+  void report_not_one_of (location_t, tree, unsigned int, HOST_WIDE_INT,
+			  HOST_WIDE_INT, HOST_WIDE_INT, HOST_WIDE_INT,
+			  HOST_WIDE_INT);
+  void report_not_enum (location_t, tree, unsigned int, HOST_WIDE_INT, tree);
+}
+
 namespace aarch64_sve {
   void init_builtins ();
   void handle_arm_sve_h (bool);
@@ -1138,6 +1152,8 @@ namespace aarch64_sve {
 #ifdef GCC_TARGET_H
   bool verify_type_context (location_t, type_context_kind, const_tree, bool);
 #endif
+ void add_sve_type_attribute (tree, unsigned int, unsigned int,
+			      const char *, const char *);
 }
 
 extern void aarch64_split_combinev16qi (rtx operands[3]);
@@ -1218,7 +1234,13 @@ extern void aarch64_adjust_reg_alloc_order ();
 
 bool aarch64_optimize_mode_switching (aarch64_mode_entity);
 void aarch64_restore_za (rtx);
+void aarch64_expand_crc_using_pmull (scalar_mode, scalar_mode, rtx *);
+void aarch64_expand_reversed_crc_using_pmull (scalar_mode, scalar_mode, rtx *);
+
 
 extern bool aarch64_gcs_enabled ();
+
+extern unsigned aarch64_data_alignment (const_tree exp, unsigned align);
+extern unsigned aarch64_stack_alignment (const_tree exp, unsigned align);
 
 #endif /* GCC_AARCH64_PROTOS_H */
